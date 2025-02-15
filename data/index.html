@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ESP IOT DASHBOARD</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+    <div class="topnav">
+        <h1>Bik'air quality monitoring</h1>
+    </div>
+    <div class="content">
+        <div class="card-grid">
+            <div class="card">
+                <p class="card-title"> Fix gps</p>
+                <div id="status" class="status nofix"></div>
+            </div>
+            <div class="card">
+                <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i>
+                    Temperature</p>
+                <p class="reading"><span id="temperature"></span> &deg;C</p>
+            </div>
+            <div class="card">
+                <p class="card-title"> Humidity</p>
+                <p class="reading"><span id="humidity"></span> &percnt;</p>
+            </div>
+            <div class="card">
+                <p class="card-title"> TVOC</p>
+                <p class="reading"><span id="tvoc"></span> ppb</p>
+            </div>
+            <div class="card">
+                <p class="card-title"> CO2</p>
+                <p class="reading"><span id="co2"></span> ppm</p>
+            </div>
+            <div class="card">
+                <p class="card-title"> PM1</p>
+                <p class="reading"><span id="pm1"></span> &#956;g/m3</p>
+            </div>
+            <div class="card">
+                <p class="card-title"> PM2</p>
+                <p class="reading"><span id="pm2"></span> &#956;g/m3</p>
+            </div>
+
+            <div class="card">
+                <p class="card-title"> Latitude</p>
+                <p class="reading"><span id="latitude"></span></p>
+            </div>
+
+            <div class="card">
+                <p class="card-title"> Longitude</p>
+                <p class="reading"><span id="longitude"></span></p>
+            </div>
+            <div class="card">
+                <p class="card-title"> Satellites</p>
+                <p class="reading"><span id="satellites"></span></p>
+            </div>
+
+            <div class="card">
+                <p class="card-title"> Altitude</p>
+                <p class="reading"><span id="altitude"></span></p>
+            </div>
+
+
+
+
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
