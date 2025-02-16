@@ -42,12 +42,4 @@ function onMessage(event) {
         document.getElementById(key).innerHTML = myObj[key];
     }
 
-    if (myObj.hasOwnProperty('gnssfix')) {
-        var voyant = document.getElementById('status');
-        if (myObj.gnssfix == 0) { // Exemple de seuil
-            voyant.className = 'status nofix';
-        } else {
-            voyant.className = 'status fix';
-        }
-    }
 }

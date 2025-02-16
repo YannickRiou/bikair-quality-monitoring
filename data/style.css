@@ -45,21 +45,3 @@ body {
     font-size: 1.2rem;
     color: #1282A2;
 }
-
-.status {
-    &.fix {
-        height: 25px;
-        width: 25px;
-        background-color: #00ff00;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    &.nofix {
-        height: 25px;
-        width: 25px;
-        background-color: #ff0000;
-        border-radius: 50%;
-        display: inline-block;
-    }
-}

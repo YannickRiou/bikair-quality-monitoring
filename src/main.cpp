@@ -260,7 +260,7 @@ String readSensors()
     openLog.print("PM2: ");
     openLog.println(val.MassPM2);
 
-    readings["gnssfix"] = String(fixStatus);
+    readings["gpsfix"] = String(fixStatus);
 
     readings["latitude"] = latitude;
     readings["longitude"] = longitude;
