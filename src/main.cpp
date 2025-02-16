@@ -15,8 +15,14 @@
 // paulvha/sps30@^1.4.17
 #include "sps30.h"
 
+#include <RunningMedian.h>
+
 #include <SoftwareSerial.h>
 #include <Wire.h>
+
+RunningMedian temperatureMeas = RunningMedian(100);
+RunningMedian humidityMeas = RunningMedian(100);
+RunningMedian co2Meas = RunningMedian(100);
 
 HardwareSerial gpsSerial(2);
 
@@ -225,30 +231,33 @@ String readSensors()
 
     // Lire les capteurs
     float temperature = myAHT20.readTemperature();
+    temperatureMeas.add(temperature);
     float humidity = myAHT20.readHumidity();
+    humidityMeas.add(humidity);
 
     if (ens160.measure())
     {
         float tvoc = ens160.getTVOC();
         float co2 = ens160.geteCO2();
+        co2Meas.add(co2);
 
         // Afficher les données des capteurs
         openLog.print("Time (UTC):");
         openLog.println(timeUTC);
         openLog.print("Temperature: ");
         openLog.print(temperature);
-        readings["temperature"] = String(temperature);
+        readings["temperature"] = String(temperatureMeas.getMedian());
         openLog.println(" C");
         openLog.print("Humidity: ");
         openLog.print(humidity);
-        readings["humidity"] = String(humidity);
+        readings["humidity"] = String(humidityMeas.getMedian());
         openLog.println(" %");
         openLog.print("TVOC: ");
         readings["tvoc"] = String(tvoc);
         openLog.print(tvoc);
         openLog.print(" ppb, CO2: ");
         readings["co2"] = String(co2);
-        openLog.print(co2);
+        openLog.print(co2Meas.getMedian());
         openLog.println(" ppm");
     }
 
