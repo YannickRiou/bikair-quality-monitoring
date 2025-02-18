@@ -1,28 +1,17 @@
-#include <Arduino.h>
-// enjoyneering/AHT10@^1.1.0
-#include <AHT10.h>
-#include <Wire.h>
+#include <main.h>
+#include <wireless.h>
 
-#include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <LittleFS.h>
-#include <Arduino_JSON.h>
+RunningMedian temperatureMeas = RunningMedian(5);
+RunningMedian humidityMeas = RunningMedian(5);
+RunningMedian co2Meas = RunningMedian(5);
 
-// adafruit/ENS160 - Adafruit Fork@^3.0.1
-#include "ScioSense_ENS160.h" // ENS160 library
+bool sensorkTaskOn = false; // Start inactive until GPS fix is acquired
+bool gpsTaskOn = true;
+unsigned long measurementStart = 0;
+const unsigned long FIX_TIMEOUT = 300000;         // 5-minute GPS fix timeout (ms)
+const unsigned long MEASUREMENT_DURATION = 20000; // 20-second active period
 
-// paulvha/sps30@^1.4.17
-#include "sps30.h"
-
-#include <RunningMedian.h>
-
-#include <SoftwareSerial.h>
-#include <Wire.h>
-
-RunningMedian temperatureMeas = RunningMedian(100);
-RunningMedian humidityMeas = RunningMedian(100);
-RunningMedian co2Meas = RunningMedian(100);
+uint8_t ledVal = 0;
 
 HardwareSerial gpsSerial(2);
 
@@ -30,51 +19,6 @@ SoftwareSerial openLog(16, 17);
 
 ScioSense_ENS160 ens160(0x53);
 AHT10 myAHT20(AHT10_ADDRESS_0X38, AHT20_SENSOR);
-
-const char *ssid = "bikeair";
-const char *password = "madlicorne";
-IPAddress local_IP(192, 168, 1, 1);
-// We set a Gateway IP address
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
-
-AsyncWebServer server(80);
-// Create a WebSocket object
-AsyncWebSocket ws("/ws");
-// Json Variable to Hold Sensor Readings
-uint8_t readStatus = 0;
-JSONVar readings;
-
-#define SP30_COMMS SERIALPORT1
-
-#define TX_PIN 9
-#define RX_PIN 10
-
-#define DEBUG 0
-
-// function prototypes (sometimes the pre-processor does not create prototypes themself on ESPxx)
-void serialTrigger(char *mess);
-void ErrtoMess(char *mess, uint8_t r);
-void Errorloop(char *mess, uint8_t r);
-void GetDeviceInfo();
-// bool readSPS30();
-String readSensors();
-void processGPS(char data);
-void parseGPGGA(String sentence);
-void parseGPRMC(String sentence);
-void parseGPVTG(String sentence);
-void initWebSocket();
-void initLittleFS();
-void notifyClients(String sensorReadings);
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len);
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
-
-// Tâches FreeRTOS
-TaskHandle_t TaskGPS;
-TaskHandle_t TaskSensors;
-//  Déclarations des fonctions de tâches
-void taskGPS(void *pvParameters);
-void taskSensors(void *pvParameters);
 
 String timeUTC = "";
 String latitude = "";
@@ -86,22 +30,30 @@ String satellites = "";
 
 // create constructor
 SPS30 sps30;
+#define SP30_COMMS SERIALPORT1
+
+#define TX_PIN 9
+#define RX_PIN 10
 
 void setup()
 {
     Serial.begin(115200);
-    Serial.println();
+
     openLog.begin(9600); // Should be the speed specified in config.txt on the sd card divided by 2
-    Wire.begin(21, 22);  // SDA, SCL
+
+    Wire.begin(21, 22); // SDA, SCL
+
+    pinMode(GPIO_NUM_2, OUTPUT);
+    digitalWrite(GPIO_NUM_2, HIGH);
+    delay(25);
+
     myAHT20.begin(21, 22);
-    Serial.println(F("AHT21 OK"));
 
     initWebSocket();
     initLittleFS();
 
     Serial.println("Setting AP (Access Point)…");
     WiFi.softAPConfig(local_IP, gateway, subnet);
-
     // Remove the password parameter, if you want the AP (Access Point) to be open
     WiFi.softAP(ssid, password);
 
@@ -138,25 +90,21 @@ void setup()
     if (!sps30.reset())
         Errorloop((char *)"could not reset.", 0);
 
-    // read device info
-    GetDeviceInfo();
-
     // start measurement
     if (sps30.start())
         Serial.println(F("Measurement started"));
     else
         Errorloop((char *)"Could NOT start measurement", 0);
 
-    gpsSerial.begin(9600, SERIAL_8N1, 32, 12);
-
-    // connect at 115200 so we can read the GPS fast enough and echo without dropping chars
-    // also spit it out
-    delay(5000);
+    gpsSerial.begin(9600, SERIAL_8N1, GPIO_NUM_4, GPIO_NUM_32);
+    delay(1000);
+    gpsSerial.println("$PMTK101*32"); // GPS wakeup command
 
     xTaskCreate(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS);
     xTaskCreate(taskSensors, "TaskSensors", 2048, NULL, 1, &TaskSensors);
+
+    openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,PM1,PM2");
 }
-uint32_t timer = millis();
 
 void taskSensors(void *pvParameters)
 {
@@ -164,11 +112,13 @@ void taskSensors(void *pvParameters)
 
     while (true)
     {
-
-        String sensorReadings = readSensors();
-        notifyClients(sensorReadings);
-        ws.cleanupClients();
-        vTaskDelay(pdMS_TO_TICKS(10000)); // Lire les capteurs toutes les 10 secondes
+        if (sensorkTaskOn)
+        {
+            String sensorReadings = readSensors();
+            notifyClients(sensorReadings);
+            ws.cleanupClients();
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 
@@ -184,7 +134,6 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
     {
         String sensorReadings = readSensors();
         notifyClients(sensorReadings);
-        //}
     }
 }
 
@@ -223,13 +172,33 @@ void initWebSocket()
     server.addHandler(&ws);
 }
 
+double convert_latlon_to_decimal(String gga_coord)
+{
+    // Extraire les degrés et les minutes
+    int degrees = gga_coord.substring(0, gga_coord.length() - 7).toInt();
+    double minutes = gga_coord.substring(gga_coord.length() - 7).toDouble();
+
+    // Convertir en format décimal
+    return degrees + (minutes / 60.0);
+}
+
+String convert_utc_to_readable(String utc_time)
+{
+    // Extraire les heures, minutes et secondes
+    String hours = utc_time.substring(0, 2);
+    String minutes = utc_time.substring(2, 4);
+    String seconds = utc_time.substring(4, 6);
+
+    // Construire la chaîne formatée
+    return hours + ":" + minutes + ":" + seconds;
+}
+
 String readSensors()
 {
     static bool header = true;
     uint8_t ret, error_cnt = 0;
     struct sps_values val;
 
-    // Lire les capteurs
     float temperature = myAHT20.readTemperature();
     temperatureMeas.add(temperature);
     float humidity = myAHT20.readHumidity();
@@ -239,35 +208,43 @@ String readSensors()
     {
         float tvoc = ens160.getTVOC();
         float co2 = ens160.geteCO2();
+        uint8_t AQI = ens160.getAQI();
         co2Meas.add(co2);
 
         // Afficher les données des capteurs
-        openLog.print("Time (UTC):");
-        openLog.println(timeUTC);
-        openLog.print("Temperature: ");
+        openLog.print(timeUTC);
+        openLog.print(",");
+        openLog.print(latitude);
+        openLog.print(",");
+        openLog.print(longitude);
+        openLog.print(",");
         openLog.print(temperature);
-        readings["temperature"] = String(temperatureMeas.getMedian());
-        openLog.println(" C");
-        openLog.print("Humidity: ");
+        openLog.print(",");
         openLog.print(humidity);
-        readings["humidity"] = String(humidityMeas.getMedian());
-        openLog.println(" %");
-        openLog.print("TVOC: ");
-        readings["tvoc"] = String(tvoc);
+        openLog.print(",");
         openLog.print(tvoc);
-        openLog.print(" ppb, CO2: ");
+        openLog.print(",");
+        openLog.print(co2Meas.getAverage());
+        openLog.print(",");
+        openLog.print(AQI);
+
+        // Store for websockets
         readings["co2"] = String(co2);
-        openLog.print(co2Meas.getMedian());
-        openLog.println(" ppm");
+        readings["tvoc"] = String(tvoc);
+        readings["humidity"] = String(humidityMeas.getAverage());
+        readings["temperature"] = String(temperatureMeas.getAverage());
+        readings["aqi"] = String(AQI);
     }
 
     sps30.GetValues(&val);
-    openLog.print("PM1: ");
-    readings["pm1"] = String(val.MassPM1);
-    openLog.println(val.MassPM1);
-    readings["pm2"] = String(val.MassPM2);
-    openLog.print("PM2: ");
+    openLog.print(",");
+    openLog.print(val.MassPM1);
+    openLog.print(",");
     openLog.println(val.MassPM2);
+
+    // Store for websockets
+    readings["pm1"] = String(val.MassPM1);
+    readings["pm2"] = String(val.MassPM2);
 
     readings["gpsfix"] = String(fixStatus);
 
@@ -287,62 +264,105 @@ void taskGPS(void *pvParameters)
 
     while (true)
     {
-        while (gpsSerial.available() > 0)
+        if (gpsTaskOn)
         {
-            char gpsData = gpsSerial.read();
-            gpsSentence += gpsData;
-
-            if (gpsData == '\n')
+            while (gpsSerial.available() > 0)
             {
-                if (gpsSentence.startsWith("$GPGGA"))
+                char gpsData = gpsSerial.read();
+                gpsSentence += gpsData;
+
+                if (gpsData == '\n')
                 {
-                    parseGPGGA(gpsSentence);
+                    if (gpsSentence.startsWith("$GPGGA"))
+                    {
+                        parseGPGGA(gpsSentence);
+                    }
+                    // else if (gpsSentence.startsWith("$GPRMC"))
+                    // {
+                    //     parseGPRMC(gpsSentence);
+                    // }
+                    // else if (gpsSentence.startsWith("$GPVTG"))
+                    // {
+                    //     parseGPVTG(gpsSentence);
+                    // }
+                    gpsSentence = ""; // Réinitialiser le buffer de la phrase
                 }
-                // else if (gpsSentence.startsWith("$GPRMC"))
-                // {
-                //     parseGPRMC(gpsSentence);
-                // }
-                // else if (gpsSentence.startsWith("$GPVTG"))
-                // {
-                //     parseGPVTG(gpsSentence);
-                // }
-                gpsSentence = ""; // Réinitialiser le buffer de la phrase
             }
+            vTaskDelay(pdMS_TO_TICKS(10)); // Petit délai pour éviter de monopoliser le CPU
         }
-        vTaskDelay(pdMS_TO_TICKS(10)); // Petit délai pour éviter de monopoliser le CPU
     }
+}
+
+void prepareForSleep()
+{
+    sensorkTaskOn = false;
+    gpsTaskOn = false;
+
+    // Allow tasks to finish current operations
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // Power down sensors
+    sps30.stop();
+    ens160.setMode(ENS160_OPMODE_DEP_SLEEP);
+    gpsSerial.println("$PMTK161,0*28"); // GPS standby mode
+
+    // Disable peripherals
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    gpsSerial.end();
+    openLog.end();
+    Wire.end();
+    digitalWrite(GPIO_NUM_2, LOW);
+    delay(25);
+    // Configure wakeup and sleep
+    esp_sleep_enable_timer_wakeup(20 * 1000000); // 10-second sleep
+    esp_deep_sleep_start();
 }
 
 void loop()
 {
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Petit délai pour éviter de monopoliser le CPU
-}
+    unsigned long wakeTime = millis();
+    bool fixAcquired = false;
 
-void processGPS(char data)
-{
-    static String gpsSentence = "";
-
-    // Ajouter le caractère au buffer de la phrase
-    gpsSentence += data;
-
-    // Vérifier si nous avons une phrase complète
-    if (data == '\n')
+    // Phase 1: Wait for GPS fix with timeout
+    while (millis() - wakeTime < FIX_TIMEOUT)
     {
-        if (gpsSentence.startsWith("$GPGGA"))
+        if (fixStatus != "" && fixStatus != "0")
         {
-            parseGPGGA(gpsSentence);
+            fixAcquired = true;
+            break;
         }
-        else if (gpsSentence.startsWith("$GPRMC"))
-        {
-            parseGPRMC(gpsSentence);
-        }
-        else if (gpsSentence.startsWith("$GPVTG"))
-        {
-            parseGPVTG(gpsSentence);
-        }
-        // Réinitialiser le buffer de la phrase
-        gpsSentence = "";
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
+
+    sensorkTaskOn = true;
+
+    if (!fixAcquired)
+    {
+        Serial.println("No GPS fix within timeout - returning to sleep");
+        prepareForSleep();
+        return;
+    }
+    // Phase 2: 20-second measurement period
+    Serial.println("GPS fix acquired - starting measurements");
+    measurementStart = millis();
+
+    while (millis() - measurementStart < MEASUREMENT_DURATION)
+    {
+        ledVal = !ledVal;
+        digitalWrite(GPIO_NUM_2, ledVal);
+        delay(25);
+        // Monitor GPS fix status during measurement
+        if (fixStatus == "0")
+        {
+            Serial.println("Lost GPS fix during measurement!");
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    // Phase 3: Prepare for sleep
+    prepareForSleep();
 }
 
 void parseGPGGA(String sentence)
@@ -359,23 +379,23 @@ void parseGPGGA(String sentence)
     }
 
     // Extraire les données
-    latitude = sentence.substring(commaPos[1] + 1, commaPos[2]);
-    longitude = sentence.substring(commaPos[3] + 1, commaPos[4]);
+    latitude = convert_latlon_to_decimal(sentence.substring(commaPos[1] + 1, commaPos[2]));
+    longitude = convert_latlon_to_decimal(sentence.substring(commaPos[3] + 1, commaPos[4]));
     fixStatus = sentence.substring(commaPos[5] + 1, commaPos[6]);
     satellites = sentence.substring(commaPos[6] + 1, commaPos[7]);
     altitude = sentence.substring(commaPos[8] + 1, commaPos[9]);
-    timeUTC = sentence.substring(commaPos[0] + 1, commaPos[1]);
+    timeUTC = convert_utc_to_readable(sentence.substring(commaPos[0] + 1, commaPos[1]));
 
-    // openLog.print("Latitude: ");
-    // openLog.println(latitude);
-    // openLog.print("Longitude: ");
-    // openLog.println(longitude);
-    // openLog.print("Fix Status: ");
-    // openLog.println(fixStatus);
-    // openLog.print("Satellites: ");
-    // openLog.println(satellites);
-    // openLog.print("Altitude: ");
-    // openLog.println(altitude);
+    // Serial.print("Latitude: ");
+    // Serial.println(latitude);
+    // Serial.print("Longitude: ");
+    // Serial.println(longitude);
+    // Serial.print("Fix Status: ");
+    // Serial.println(fixStatus);
+    // Serial.print("Satellites: ");
+    // Serial.println(satellites);
+    // Serial.print("Altitude: ");
+    // Serial.println(altitude);
 }
 
 void parseGPRMC(String sentence)
