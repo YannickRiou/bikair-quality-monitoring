@@ -19,7 +19,7 @@
 #include <RunningMedian.h>
 
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP 10          /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP 20          /* Time ESP32 will go to sleep (in seconds) */
 
 // Tâches FreeRTOS
 TaskHandle_t TaskGPS;
@@ -33,12 +33,12 @@ void ErrtoMess(char *mess, uint8_t r);
 void Errorloop(char *mess, uint8_t r);
 void GetDeviceInfo();
 // bool readSPS30();
-String readSensors();
+String readSensors(bool store);
 void processGPS(char data);
 void parseGPGGA(String sentence);
 void parseGPRMC(String sentence);
 void parseGPVTG(String sentence);
-void prepareForSleep();
+void prepareForSleep(bool deepSleep);
 
 void initLittleFS();
 

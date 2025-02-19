@@ -41,5 +41,10 @@ function onMessage(event) {
         var key = keys[i];
         document.getElementById(key).innerHTML = myObj[key];
     }
+}
 
+function toggleCheckbox(x) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/" + x, true);
+    xhr.send();
 }

@@ -57,15 +57,6 @@ void setup()
     // Remove the password parameter, if you want the AP (Access Point) to be open
     WiFi.softAP(ssid, password);
 
-    // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(LittleFS, "/index.html", "text/html"); });
-
-    server.serveStatic("/", LittleFS, "/");
-
-    // Start server
-    server.begin();
-
     if (!ens160.begin())
     {
         Serial.println("ENS160 not found. Check connections!");
@@ -104,21 +95,46 @@ void setup()
     xTaskCreate(taskSensors, "TaskSensors", 2048, NULL, 1, &TaskSensors);
 
     openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,PM1,PM2");
+
+    // Web Server Root URL
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+              { request->send(LittleFS, "/index.html", "text/html"); });
+
+    server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+            Serial.println("Going to sleep...");
+            request->send(200, "text/plain", "OK"); 
+            prepareForSleep(true); });
+
+    server.serveStatic("/", LittleFS, "/");
+
+    // Start server
+    server.begin();
 }
 
 void taskSensors(void *pvParameters)
 {
     (void)pvParameters;
+    bool isDataOk = false;
+    uint8_t dataCounter = 0;
 
     while (true)
     {
         if (sensorkTaskOn)
         {
-            String sensorReadings = readSensors();
+            String sensorReadings = readSensors(isDataOk);
             notifyClients(sensorReadings);
             ws.cleanupClients();
+            if (dataCounter < 5)
+            {
+                dataCounter = dataCounter + 1;
+            }
+            else
+            {
+                isDataOk = true;
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -132,7 +148,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
     AwsFrameInfo *info = (AwsFrameInfo *)arg;
     if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT)
     {
-        String sensorReadings = readSensors();
+        String sensorReadings = readSensors(true);
         notifyClients(sensorReadings);
     }
 }
@@ -193,24 +209,25 @@ String convert_utc_to_readable(String utc_time)
     return hours + ":" + minutes + ":" + seconds;
 }
 
-String readSensors()
+String readSensors(bool store)
 {
     static bool header = true;
     uint8_t ret, error_cnt = 0;
     struct sps_values val;
 
+    ens160.measure();
+
+    float tvoc = ens160.getTVOC();
+    float co2 = ens160.geteCO2();
+    uint8_t AQI = ens160.getAQI();
     float temperature = myAHT20.readTemperature();
-    temperatureMeas.add(temperature);
     float humidity = myAHT20.readHumidity();
+
     humidityMeas.add(humidity);
-
-    if (ens160.measure())
+    temperatureMeas.add(temperature);
+    co2Meas.add(co2);
+    if (store)
     {
-        float tvoc = ens160.getTVOC();
-        float co2 = ens160.geteCO2();
-        uint8_t AQI = ens160.getAQI();
-        co2Meas.add(co2);
-
         // Afficher les données des capteurs
         openLog.print(timeUTC);
         openLog.print(",");
@@ -227,21 +244,23 @@ String readSensors()
         openLog.print(co2Meas.getAverage());
         openLog.print(",");
         openLog.print(AQI);
-
-        // Store for websockets
-        readings["co2"] = String(co2);
-        readings["tvoc"] = String(tvoc);
-        readings["humidity"] = String(humidityMeas.getAverage());
-        readings["temperature"] = String(temperatureMeas.getAverage());
-        readings["aqi"] = String(AQI);
     }
 
-    sps30.GetValues(&val);
-    openLog.print(",");
-    openLog.print(val.MassPM1);
-    openLog.print(",");
-    openLog.println(val.MassPM2);
+    // Store for websockets
+    readings["co2"] = String(co2);
+    readings["tvoc"] = String(tvoc);
+    readings["humidity"] = String(humidityMeas.getAverage());
+    readings["temperature"] = String(temperatureMeas.getAverage());
+    readings["aqi"] = String(AQI);
 
+    sps30.GetValues(&val);
+    if (store)
+    {
+        openLog.print(",");
+        openLog.print(val.MassPM1);
+        openLog.print(",");
+        openLog.println(val.MassPM2);
+    }
     // Store for websockets
     readings["pm1"] = String(val.MassPM1);
     readings["pm2"] = String(val.MassPM2);
@@ -293,7 +312,7 @@ void taskGPS(void *pvParameters)
     }
 }
 
-void prepareForSleep()
+void prepareForSleep(bool deepSleep)
 {
     sensorkTaskOn = false;
     gpsTaskOn = false;
@@ -315,7 +334,10 @@ void prepareForSleep()
     digitalWrite(GPIO_NUM_2, LOW);
     delay(25);
     // Configure wakeup and sleep
-    esp_sleep_enable_timer_wakeup(20 * 1000000); // 10-second sleep
+    if (!deepSleep)
+    {
+        esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+    }
     esp_deep_sleep_start();
 }
 
@@ -340,7 +362,7 @@ void loop()
     if (!fixAcquired)
     {
         Serial.println("No GPS fix within timeout - returning to sleep");
-        prepareForSleep();
+        prepareForSleep(false);
         return;
     }
     // Phase 2: 20-second measurement period
@@ -362,7 +384,7 @@ void loop()
     }
 
     // Phase 3: Prepare for sleep
-    prepareForSleep();
+    prepareForSleep(false);
 }
 
 void parseGPGGA(String sentence)
@@ -379,8 +401,8 @@ void parseGPGGA(String sentence)
     }
 
     // Extraire les données
-    latitude = convert_latlon_to_decimal(sentence.substring(commaPos[1] + 1, commaPos[2]));
-    longitude = convert_latlon_to_decimal(sentence.substring(commaPos[3] + 1, commaPos[4]));
+    latitude = String(convert_latlon_to_decimal(sentence.substring(commaPos[1] + 1, commaPos[2])), 6);
+    longitude = String(convert_latlon_to_decimal(sentence.substring(commaPos[3] + 1, commaPos[4])), 6);
     fixStatus = sentence.substring(commaPos[5] + 1, commaPos[6]);
     satellites = sentence.substring(commaPos[6] + 1, commaPos[7]);
     altitude = sentence.substring(commaPos[8] + 1, commaPos[9]);
