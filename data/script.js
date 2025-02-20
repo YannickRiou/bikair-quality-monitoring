@@ -39,7 +39,40 @@ function onMessage(event) {
 
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
-        document.getElementById(key).innerHTML = myObj[key];
+        if (key === "gpsfix") {
+            var gpsElem = document.getElementById("gpsfix");
+            // Remove both fix and nofix classes to start fresh
+            gpsElem.classList.remove("fix", "nofix", "goodfix");
+            if (myObj[key].trim() === "0") {
+                gpsElem.classList.add("nofix");
+            } else if (myObj[key].trim() === "1") {
+                gpsElem.classList.add("fix");
+            } else if (myObj[key].trim() === "2") {
+                gpsElem.classList.add("goodfix");
+            }
+        } else if (key === "aqi") {
+            var aqiElem = document.getElementById("aqi");
+            aqiElem.classList.remove("excellent", "good", "moderate", "poor", "unhealthy", "stale");
+            if (myObj[key].trim() === "1") {
+                aqiElem.classList.add("excellent");
+            } else if (myObj[key].trim() === "2") {
+                aqiElem.classList.add("good");
+            } else if (myObj[key].trim() === "3") {
+                aqiElem.classList.add("moderate");
+            } else if (myObj[key].trim() === "4") {
+                aqiElem.classList.add("poor");
+            } else if (myObj[key].trim() === "5") {
+                aqiElem.classList.add("unhealthy");
+            } else {
+                aqiElem.classList.add("stale");
+            }
+        } else {
+            // For other keys, update the innerHTML of the corresponding element
+            var elem = document.getElementById(key);
+            if (elem) {
+                elem.innerHTML = myObj[key];
+            }
+        }
     }
 }
 

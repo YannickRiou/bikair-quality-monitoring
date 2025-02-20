@@ -10,9 +10,34 @@ h1 {
 }
 
 .topnav {
-    overflow: hidden;
-    background-color: #0A1128;
+    overflow display: flex;
+    /* Utilise Flexbox pour aligner le contenu */
+    align-items: center;
+    /* Centre verticalement */
+    justify-content: center;
+    /* Centre horizontalement */
+
+    background: linear-gradient(135deg, #4CAF50, #2E8B57);
+    /* Dégradé moderne */
+    color: white;
+    /* Texte blanc */
+    font-size: 2rem;
+    /* Titre plus grand */
+    font-weight: bold;
+    /* Texte en gras */
+    padding: 20px;
+    /* Ajoute de l'espace autour */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    /* Ombre subtile */
+    border-bottom-left-radius: 20px;
+    /* Coins arrondis */
+    border-bottom-right-radius: 20px;
+    text-transform: uppercase;
+    /* Met le texte en majuscules */
+    letter-spacing: 2px;
+    /* Espacement entre les lettres */
 }
+
 
 body {
     margin: 0;
@@ -26,13 +51,31 @@ body {
     max-width: 800px;
     margin: 0 auto;
     display: grid;
-    grid-gap: 2rem;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
 }
 
 .card {
-    background-color: white;
-    box-shadow: 2px 2px 12px 1px rgba(140, 140, 140, .5);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+
+    padding: 15px;
+    margin: 5px;
+
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    min-height: 120px;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
 }
 
 .card-title {
@@ -47,31 +90,73 @@ body {
 }
 
 .button {
-    padding: 10px 20px;
-    font-size: 24px;
-    text-align: center;
-    outline: none;
-    color: #fff;
-    background-color: #2f4468;
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
     border: none;
-    border-radius: 5px;
-    box-shadow: 0 6px #999;
-    cursor: pointer;
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    -khtml-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
-}
-
-.button:hover {
-    background-color: #1f2e45
+    border-radius: 4px;
+    background-color: #007BFF;
+    color: white;
+    cursor: auto;
 }
 
 .button:active {
     background-color: #1f2e45;
     box-shadow: 0 4px #666;
     transform: translateY(2px);
+}
+
+.gpsstatus {
+    display: block;
+    margin: auto;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 4px;
+}
+
+/* Styles spécifiques selon l'état */
+.gpsstatus.goodfix {
+    background-color: #23d12b;
+}
+
+.gpsstatus.nofix {
+    background-color: #ff0000;
+}
+
+.gpsstatus.fix {
+    background-color: #ffae00;
+}
+
+.aqistatus {
+    display: block;
+    margin: auto;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 4px;
+}
+
+.aqistatus.excellent {
+    background-color: #77e4ff;
+}
+
+.aqistatus.good {
+    background-color: #40f01d;
+}
+
+.aqistatus.moderate {
+    background-color: #ffec3e;
+}
+
+.aqistatus.poor {
+    background-color: #f0aa28;
+}
+
+.aqistatus.unhealthy {
+    background-color: #ff0000;
+}
+
+.aqistatus.stale {
+    background-color: #a3a3a3;
 }

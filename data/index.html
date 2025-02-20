@@ -13,19 +13,15 @@
         <h1>Bik'air quality monitoring</h1>
     </div>
     <div class="content">
-
+        <button class="button" onclick="toggleCheckbox('sleep');">Sleep</button>
         <div class="card-grid">
             <div class="card">
-                <p class="card-title"> Go To sleep</p>
-                <button class="button" onclick="toggleCheckbox('sleep');">SLEEP</button>
-            </div>
-            <div class="card">
                 <p class="card-title"> Fix gps</p>
-                <p class="reading"><span id="gpsfix"></span></p>
+                <div id="gpsstatus" class="gpsstatus nofix"></div>
             </div>
             <div class="card">
                 <p class="card-title"> AQI</p>
-                <p class="reading"><span id="aqi"></span> /5</p>
+                <div id="aqistatus" class="aqistatus nodata"></div>
             </div>
             <div class="card">
                 <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i>
