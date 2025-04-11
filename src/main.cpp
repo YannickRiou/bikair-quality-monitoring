@@ -121,7 +121,7 @@ void setup()
 
     server.on("/set-time", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
               {
-                    ArduinoJson::DynamicJsonDocument doc(256);
+                    JsonDocument doc;
                     DeserializationError error = deserializeJson(doc, data, len);
                 
                     // 2. Vérifier les erreurs de parsing
