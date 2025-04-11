@@ -1,9 +1,13 @@
 #include <main.h>
 #include <wireless.h>
 
-RunningMedian temperatureMeas = RunningMedian(5);
-RunningMedian humidityMeas = RunningMedian(5);
+RunningMedian temperatureMeas = RunningMedian(10);
+RunningMedian humidityMeas = RunningMedian(10);
 RunningMedian co2Meas = RunningMedian(5);
+// RunningMedian pm1Meas = RunningMedian(2);
+// RunningMedian pm2Meas = RunningMedian(2);
+RunningMedian tvocMeas = RunningMedian(5);
+RunningMedian speedMeas = RunningMedian(3);
 
 bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
@@ -292,6 +296,14 @@ String readSensors(bool store)
     humidityMeas.add(humidity);
     temperatureMeas.add(temperature);
     co2Meas.add(co2);
+    tvocMeas.add(tvoc);
+    // pm1Meas.add(float(val.MassPM1));
+    // pm2Meas.add(float(val.MassPM2));
+
+    speedMeas.add(speed.toFloat());
+    lastSpeedMeasurement = speed.toFloat();
+
+    automaticSpeedAdjustment();
 
     if (fixStatus == "0")
     {
