@@ -468,7 +468,7 @@ void loop()
     // Phase 3: Prepare for sleep
     if (sleepEnabled)
     {
-    prepareForSleep(false);
+        prepareForSleep(false);
     }
     else
     {
