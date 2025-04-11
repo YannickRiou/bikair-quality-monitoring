@@ -41,6 +41,22 @@ function onMessage(event) {
 
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
+document.getElementById("startstopmeas-btn").addEventListener("click", function () {
+    var btn = this;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/startstopmeas", true);
+    xhr.send();
+    var startStopButton = document.getElementById("startstopmeas-btn");
+    if (startStopButton.innerHTML === "▶️ Start Measure") {
+        startStopButton.innerHTML = "🛑 Stop Measure";
+        startStopButton.style.backgroundColor = "red";
+        btn.dataset.state = "false";
+    } else {
+        startStopButton.innerHTML = "▶️ Start Measure";
+        startStopButton.style.backgroundColor = "green";
+        btn.dataset.state = "true";
+    }
+});
 document.getElementById("mode-btn").addEventListener("click", function () {
     console.log("modeToggle button clicked");
     var btn = this;

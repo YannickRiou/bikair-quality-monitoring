@@ -5,7 +5,7 @@ RunningMedian temperatureMeas = RunningMedian(5);
 RunningMedian humidityMeas = RunningMedian(5);
 RunningMedian co2Meas = RunningMedian(5);
 
-bool sensorkTaskOn = false; // Start inactive until GPS fix is acquired
+bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
 const unsigned long FIX_TIMEOUT = 300000;         // 5-minute GPS fix timeout (ms)
@@ -105,6 +105,11 @@ void setup()
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
               {
             Serial.println("Going to sleep...");
+    server.on("/startstopmeas", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+                  sensorkTaskOn = !sensorkTaskOn;                  
+                  request->send(200, "text/plain", "OK"); });
+
     server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *request)
               {
                   sleepEnabled = !sleepEnabled;
@@ -187,7 +192,15 @@ void taskSensors(void *pvParameters)
                 isDataOk = true;
             }
         }
+        else
+        {
             digitalWrite(GPIO_NUM_2, HIGH);
+
+            String sensorReadings = readSensors(false);
+            notifyClients(sensorReadings);
+            ws.cleanupClients();
+        }
+        vTaskDelay(pdMS_TO_TICKS(2500));
     }
 }
 
