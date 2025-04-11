@@ -96,7 +96,7 @@ void setup()
     xTaskCreate(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS);
     xTaskCreate(taskSensors, "TaskSensors", 2048, NULL, 1, &TaskSensors);
 
-    openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,PM1,PM2");
+    // openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,AQI,PM1,PM2");
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
