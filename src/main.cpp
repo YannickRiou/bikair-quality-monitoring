@@ -416,14 +416,13 @@ void loop()
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    sensorkTaskOn = true;
+    // if (!fixAcquired)
+    // {
+    //     Serial.println("No GPS fix within timeout - returning to sleep");
+    //     prepareForSleep(false);
+    //     return;
+    // }
 
-    if (!fixAcquired)
-    {
-        Serial.println("No GPS fix within timeout - returning to sleep");
-        prepareForSleep(false);
-        return;
-    }
     // Phase 2: 20-second measurement period
     Serial.println("GPS fix acquired - starting measurements");
     measurementStart = millis();
