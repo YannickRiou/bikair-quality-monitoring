@@ -8,7 +8,7 @@
 
 const char *ssid = "bikeair";
 const char *password = "madlicorne";
-IPAddress local_IP(192, 168, 1, 1);
+IPAddress local_IP(192, 168, 1, 66);
 // We set a Gateway IP address
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
