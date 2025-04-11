@@ -362,10 +362,10 @@ void taskGPS(void *pvParameters)
                     // {
                     //     parseGPRMC(gpsSentence);
                     // }
-                    // else if (gpsSentence.startsWith("$GPVTG"))
-                    // {
-                    //     parseGPVTG(gpsSentence);
-                    // }
+                    else if (gpsSentence.startsWith("$GPVTG"))
+                    {
+                        parseGPVTG(gpsSentence);
+                    }
                     gpsSentence = ""; // Réinitialiser le buffer de la phrase
                 }
             }
