@@ -41,11 +41,23 @@ function onMessage(event) {
 
     for (var i = 0; i < keys.length; i++) {
         var key = keys[i];
-        document.getElementById(key).innerHTML = myObj[key];
+document.getElementById("mode-btn").addEventListener("click", function () {
+    console.log("modeToggle button clicked");
+    var btn = this;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/mode", true);
+    xhr.send();
+    var modeToggleButton = document.getElementById("mode-btn");
+    if (modeToggleButton.innerHTML === "🔁 Periodic") {
+        modeToggleButton.innerHTML = "▶️ Continuous";
+        modeToggleButton.style.backgroundColor = "darkviolet";
+        btn.dataset.state = "false";
+    } else {
+        modeToggleButton.innerHTML = "🔁 Periodic";
+        modeToggleButton.style.backgroundColor = "greenyellow";
+        btn.dataset.state = "true";
     }
-}
-
-function toggleCheckbox(x) {
+});
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/" + x, true);
     xhr.send();

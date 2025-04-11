@@ -27,6 +27,7 @@ String altitude = "";
 String speed = "";
 String fixStatus = "";
 String satellites = "";
+bool sleepEnabled = true;
 
 // create constructor
 SPS30 sps30;
@@ -103,6 +104,11 @@ void setup()
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
               {
             Serial.println("Going to sleep...");
+    server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+                  sleepEnabled = !sleepEnabled;
+                request->send(200, "text/plain", "OK"); });
+
     server.on("/set-time", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
               {
                     ArduinoJson::DynamicJsonDocument doc(256);
@@ -439,7 +445,14 @@ void loop()
     }
 
     // Phase 3: Prepare for sleep
+    if (sleepEnabled)
+    {
     prepareForSleep(false);
+    }
+    else
+    {
+        delay(TIME_TO_SLEEP * 1000);
+    }
 }
 
 void parseGPGGA(String sentence)
