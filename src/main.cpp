@@ -30,7 +30,7 @@ String altitude = "";
 String speed = "";
 String fixStatus = "";
 String satellites = "";
-bool sleepEnabled = true;
+bool sleepEnabled = false; // continuous mode by default
 
 // create constructor
 SPS30 sps30;
