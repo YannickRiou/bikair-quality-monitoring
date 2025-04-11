@@ -420,12 +420,15 @@ void loop()
     // Phase 1: Wait for GPS fix with timeout
     while ((millis() - wakeTime) < FIX_TIMEOUT)
     {
+        ledVal = !ledVal;
+        digitalWrite(GPIO_NUM_2, ledVal);
+        delay(25);
         if (fixStatus != "" && fixStatus != "0")
         {
             fixAcquired = true;
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     // if (!fixAcquired)
