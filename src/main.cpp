@@ -13,6 +13,9 @@ const unsigned long MEASUREMENT_DURATION = 20000; // 20-second active period
 
 uint8_t ledVal = 0;
 
+const float Toffset = 11.58;
+const float Hoffset = 17.66;
+
 HardwareSerial gpsSerial(2);
 
 SoftwareSerial openLog(16, 17);
@@ -288,16 +291,16 @@ String readSensors(bool store)
 
     if (store)
     {
-        // Afficher les données des capteurs
+
         openLog.print(timeUTC);
         openLog.print(",");
         openLog.print(latitude);
         openLog.print(",");
         openLog.print(longitude);
         openLog.print(",");
-        openLog.print(temperature);
+        openLog.print(temperature - Toffset); // Temperature is always greater than real
         openLog.print(",");
-        openLog.print(humidity);
+        openLog.print(humidity + Hoffset); // Humidity is always lower than real
         openLog.print(",");
         openLog.print(tvoc);
         openLog.print(",");
@@ -310,8 +313,8 @@ String readSensors(bool store)
     readings["time_utc"] = timeUTC;
     readings["co2"] = String(co2);
     readings["tvoc"] = String(tvoc);
-    readings["humidity"] = String(humidityMeas.getAverage());
-    readings["temperature"] = String(temperatureMeas.getAverage());
+    readings["humidity"] = String(humidityMeas.getAverage() + Hoffset);
+    readings["temperature"] = String(temperatureMeas.getAverage() - Toffset);
     readings["aqi"] = String(AQI);
 
     sps30.GetValues(&val);
