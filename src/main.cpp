@@ -94,7 +94,7 @@ void setup()
     gpsSerial.println("$PMTK101*32"); // GPS wakeup command
 
     xTaskCreate(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS);
-    xTaskCreate(taskSensors, "TaskSensors", 2048, NULL, 1, &TaskSensors);
+    xTaskCreate(taskSensors, "TaskSensors", 4096, NULL, 1, &TaskSensors);
 
     // openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,AQI,PM1,PM2");
 
