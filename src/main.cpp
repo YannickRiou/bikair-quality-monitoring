@@ -48,7 +48,6 @@ void setup()
     Wire.begin(21, 22); // SDA, SCL
 
     pinMode(GPIO_NUM_2, OUTPUT);
-    digitalWrite(GPIO_NUM_2, HIGH);
     delay(25);
 
     myAHT20.begin(21, 22);
@@ -58,7 +57,6 @@ void setup()
 
     Serial.println("Setting AP (Access Point)…");
     WiFi.softAPConfig(local_IP, gateway, subnet);
-    // Remove the password parameter, if you want the AP (Access Point) to be open
     WiFi.softAP(ssid, password);
 
     if (!ens160.begin())
@@ -168,11 +166,15 @@ void taskSensors(void *pvParameters)
     (void)pvParameters;
     bool isDataOk = false;
     uint8_t dataCounter = 0;
-
+    uint8_t ledVal = 0;
     while (true)
     {
         if (sensorkTaskOn)
         {
+
+            ledVal = !ledVal;
+            digitalWrite(GPIO_NUM_2, ledVal);
+
             String sensorReadings = readSensors(isDataOk);
             notifyClients(sensorReadings);
             ws.cleanupClients();
@@ -185,7 +187,7 @@ void taskSensors(void *pvParameters)
                 isDataOk = true;
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+            digitalWrite(GPIO_NUM_2, HIGH);
     }
 }
 
