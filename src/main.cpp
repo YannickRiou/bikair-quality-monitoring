@@ -8,6 +8,7 @@ RunningMedian co2Meas = RunningMedian(5);
 // RunningMedian pm2Meas = RunningMedian(2);
 RunningMedian tvocMeas = RunningMedian(5);
 RunningMedian speedMeas = RunningMedian(3);
+float lastSpeedMeasurement = 0;
 
 bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
@@ -19,6 +20,9 @@ uint8_t ledVal = 0;
 
 const float Toffset = 11.58;
 const float Hoffset = 17.66;
+
+const float DEFAULT_MEASURE_PERIOD = 2000;       // default measure period in ms
+uint16_t measurePeriod = DEFAULT_MEASURE_PERIOD; // default measure period
 
 HardwareSerial gpsSerial(2);
 
@@ -277,6 +281,29 @@ String convert_utc_to_readable(String utc_time)
 
     // Construire la chaîne formatée
     return hours + ":" + minutes + ":" + seconds;
+}
+
+void automaticSpeedAdjustment()
+{
+    if (speed.toFloat() > 5)
+    {
+        if (speed.toFloat() > lastSpeedMeasurement)
+        {
+            measurePeriod = measurePeriod - 100;
+            if (measurePeriod < 1000)
+            {
+                measurePeriod = 1000;
+            }
+        }
+        else if (speed.toFloat() < lastSpeedMeasurement)
+        {
+            measurePeriod = measurePeriod + 100;
+            if (measurePeriod > 10000)
+            {
+                measurePeriod = 10000;
+            }
+        }
+    }
 }
 
 String readSensors(bool store)
