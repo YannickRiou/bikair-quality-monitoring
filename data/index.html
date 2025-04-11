@@ -2,75 +2,64 @@
 <html>
 
 <head>
-    <title>ESP IOT DASHBOARD</title>
+    <meta charset="UTF-8">
+
+    <title>Bik'air Quality Monitoring</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:,">
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
 <body>
+    <header class="topnav">
+        <h1>🚴 Bik'air Quality Monitoring 🍃</h1>
         <span id="time_utc"></span>
+        <span id="gpsfix" class="status-box"></span>
+    </header>
+
+    <main class="dashboard">
+        <!-- Section Commandes -->
+        <section class="controls-section">
+            <h2>🛠️ Commandes</h2>
+            <div class="controls">
                 <button class="button" id="startstopmeas-btn" data-state="false">🛑 Stop Measure</button>
+                <button class="button" id="mode-btn" data-state="false">🔁 Periodic</button>
                 <button class="button" id="sleep-btn" data-state="false">💤 Sleep now</button>
             </div>
-            <div class="card">
-                <p class="card-title"> Fix gps</p>
-                <p class="reading"><span id="gpsfix"></span></p>
-            </div>
-            <div class="card">
-                <p class="card-title"> AQI</p>
-                <p class="reading"><span id="aqi"></span> /5</p>
-            </div>
-            <div class="card">
-                <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i>
-                    Temperature</p>
-                <p class="reading"><span id="temperature"></span> &deg;C</p>
-            </div>
-            <div class="card">
-                <p class="card-title"> Humidity</p>
-                <p class="reading"><span id="humidity"></span> &percnt;</p>
-            </div>
-            <div class="card">
-                <p class="card-title"> TVOC</p>
-                <p class="reading"><span id="tvoc"></span> ppb</p>
-            </div>
-            <div class="card">
-                <p class="card-title"> CO2</p>
-                <p class="reading"><span id="co2"></span> ppm</p>
-            </div>
-            <div class="card">
-                <p class="card-title"> PM1</p>
-                <p class="reading"><span id="pm1"></span> &#956;g/m3</p>
-            </div>
-            <div class="card">
-                <p class="card-title"> PM2</p>
-                <p class="reading"><span id="pm2"></span> &#956;g/m3</p>
-            </div>
+        </section>
 
-            <div class="card">
-                <p class="card-title"> Latitude</p>
-                <p class="reading"><span id="latitude"></span></p>
+        <!-- Section Capteurs / Mesures -->
+        <section class="readings-section">
+            <h2>📊 Mesures</h2>
+            <div class="grid-readings">
+                <div class="reading"><label>💨 AQI</label><span id="aqi"></span> /5</div>
+                <div class="reading"><label>🌡️ Température</label><span id="temperature"></span><span class="unit">
+                        °C</span></div>
+                <div class="reading"><label>💧 Humidité</label><span id="humidity"></span><span class="unit"> %</span>
+                </div>
+                <div class="reading"><label>🌫️ TVOC</label><span id="tvoc"></span><span class="unit"></span> ppb</span>
+                </div>
+                <div class="reading"><label>🫁 CO₂</label><span id="co2"></span><span class="unit"></span> ppm</span>
+                </div>
+                <div class="reading"><label>🌁 PM1</label><span id="pm1"></span><span class="unit"></span> μg/m³</span>
+                </div>
+                <div class="reading"><label>🌁 PM2</label><span id="pm2"></span><span class="unit"></span> μg/m³</span>
+                </div>
             </div>
+        </section>
 
-            <div class="card">
-                <p class="card-title"> Longitude</p>
-                <p class="reading"><span id="longitude"></span></p>
+        <!-- Section GPS -->
+        <section class="gps-section">
+            <h2>🛰️ Données GPS</h2>
+            <div class="grid-readings">
+                <div class="reading"><label>🧭 Latitude</label><span id="latitude"></span></div>
+                <div class="reading"><label>🧭 Longitude</label><span id="longitude"></span></div>
+                <div class="reading"><label>📡 Satellites</label><span id="satellites"></span></div>
+                <div class="reading"><label>⛰️ Altitude</label><span id="altitude"></span></div>
             </div>
-            <div class="card">
-                <p class="card-title"> Satellites</p>
-                <p class="reading"><span id="satellites"></span></p>
-            </div>
+        </section>
+    </main>
 
-            <div class="card">
-                <p class="card-title"> Altitude</p>
-                <p class="reading"><span id="altitude"></span></p>
-            </div>
-
-
-
-
-        </div>
-    </div>
     <script src="script.js"></script>
 </body>
 
