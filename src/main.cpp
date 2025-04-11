@@ -411,7 +411,7 @@ void loop()
     bool fixAcquired = false;
 
     // Phase 1: Wait for GPS fix with timeout
-    while (millis() - wakeTime < FIX_TIMEOUT)
+    while ((millis() - wakeTime) < FIX_TIMEOUT)
     {
         if (fixStatus != "" && fixStatus != "0")
         {
