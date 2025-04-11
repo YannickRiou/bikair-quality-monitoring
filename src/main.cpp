@@ -92,6 +92,7 @@ void setup()
     gpsSerial.begin(9600, SERIAL_8N1, GPIO_NUM_4, GPIO_NUM_32);
     delay(1000);
     gpsSerial.println("$PMTK101*32"); // GPS wakeup command
+    gpsSerial.println("$PMTK313,0");  // Disable sbas
 
     xTaskCreate(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS);
     xTaskCreate(taskSensors, "TaskSensors", 4096, NULL, 1, &TaskSensors);
