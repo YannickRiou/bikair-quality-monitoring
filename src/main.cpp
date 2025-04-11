@@ -307,42 +307,16 @@ String readSensors(bool store)
         timeUTC = String(timeStr);
     }
 
-    if (store)
-    {
-
-        openLog.print(timeUTC);
-        openLog.print(",");
-        openLog.print(latitude);
-        openLog.print(",");
-        openLog.print(longitude);
-        openLog.print(",");
-        openLog.print(temperature - Toffset); // Temperature is always greater than real
-        openLog.print(",");
-        openLog.print(humidity + Hoffset); // Humidity is always lower than real
-        openLog.print(",");
-        openLog.print(tvoc);
-        openLog.print(",");
-        openLog.print(co2Meas.getAverage());
-        openLog.print(",");
-        openLog.print(AQI);
-    }
-
     // Store for websockets
     readings["time_utc"] = timeUTC;
-    readings["co2"] = String(co2);
-    readings["tvoc"] = String(tvoc);
-    readings["humidity"] = String(humidityMeas.getAverage() + Hoffset);
-    readings["temperature"] = String(temperatureMeas.getAverage() - Toffset);
+    readings["co2"] = String(co2Meas.getMedian());
+    readings["tvoc"] = String(tvocMeas.getMedian());
+    readings["humidity"] = String(humidityMeas.getMedian() + Hoffset);
+    readings["temperature"] = String(temperatureMeas.getMedian() - Toffset);
     readings["aqi"] = String(AQI);
 
     sps30.GetValues(&val);
-    if (store)
-    {
-        openLog.print(",");
-        openLog.print(val.MassPM1);
-        openLog.print(",");
-        openLog.println(val.MassPM2);
-    }
+
     // Store for websockets
     readings["pm1"] = String(val.MassPM1);
     readings["pm2"] = String(val.MassPM2);
@@ -353,8 +327,14 @@ String readSensors(bool store)
     readings["longitude"] = longitude;
     readings["satellites"] = satellites;
     readings["altitude"] = altitude;
+    readings["speed"] = speedMeas.getAverage();
 
     String jsonString = JSON.stringify(readings);
+
+    if (store)
+    {
+        openLog.println(jsonString);
+    }
     return jsonString;
 }
 
