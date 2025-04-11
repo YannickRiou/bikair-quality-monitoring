@@ -13,8 +13,7 @@ float lastSpeedMeasurement = 0;
 bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
-const unsigned long FIX_TIMEOUT = 150000;         // 2.5-minute GPS fix timeout (ms)
-const unsigned long MEASUREMENT_DURATION = 10000; // 10-second active period
+const unsigned long NUMBER_OF_MEASUREMENTS = 5; // Number of measurements to average
 
 uint8_t ledVal = 0;
 
@@ -469,18 +468,17 @@ void loop()
     Serial.println("GPS fix acquired - starting measurements");
     measurementStart = millis();
 
-    while (millis() - measurementStart < MEASUREMENT_DURATION)
+    while ((millis() - measurementStart) < (measurePeriod * NUMBER_OF_MEASUREMENTS))
     {
         ledVal = !ledVal;
         digitalWrite(GPIO_NUM_2, ledVal);
         delay(25);
-        // Monitor GPS fix status during measurement
         if (fixStatus == "0")
         {
             Serial.println("Lost GPS fix during measurement!");
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
     // Phase 3: Prepare for sleep
