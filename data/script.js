@@ -6,6 +6,7 @@ window.addEventListener('load', onload);
 
 function onload(event) {
     initWebSocket();
+    syncButtonStates(); // Nouvelle fonction pour mettre à jour l’état des boutons
 }
 
 function getReadings() {
@@ -47,4 +48,36 @@ function toggleCheckbox(x) {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/" + x, true);
     xhr.send();
+function syncButtonStates() {
+    console.log("Synchronizing button states...");
+    fetch('/status')
+        .then(response => response.json())
+        .then(status => {
+            // Start/Stop Measure
+            const startStopButton = document.getElementById("startstopmeas-btn");
+            if (status.measuring) {
+                startStopButton.innerHTML = "🛑 Stop Measure";
+                startStopButton.style.backgroundColor = "red";
+                startStopButton.dataset.state = "false";
+            } else {
+                startStopButton.innerHTML = "▶️ Start Measure";
+                startStopButton.style.backgroundColor = "green";
+                startStopButton.dataset.state = "true";
+            }
+
+            // Mode
+            const modeButton = document.getElementById("mode-btn");
+            if (status.mode) {
+                modeButton.innerHTML = "🔁 Periodic";
+                modeButton.style.backgroundColor = "greenyellow";
+                modeButton.dataset.state = "true";
+            } else {
+                modeButton.innerHTML = "▶️ Continuous";
+                modeButton.style.backgroundColor = "darkviolet";
+                modeButton.dataset.state = "false";
+            }
+        })
+        .catch(error => {
+            console.error("Erreur lors de la récupération de l'état :", error);
+        });
 }

@@ -13,6 +13,7 @@
 
 #include <Wire.h>
 #include <SoftwareSerial.h>
+#include <ArduinoJson.h>
 
 #include <LittleFS.h>
 

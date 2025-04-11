@@ -103,8 +103,13 @@ void setup()
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
               {
             Serial.println("Going to sleep...");
-            request->send(200, "text/plain", "OK"); 
-            prepareForSleep(true); });
+    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+                    String json = "{";
+                    json += "\"measuring\":" + String(sensorkTaskOn ? "true" : "false") + ",";
+                    json += "\"mode\":" + String(sleepEnabled ? "true" : "false") + ",";
+                    json += "}";
+                    request->send(200, "application/json", json); });
 
     server.serveStatic("/", LittleFS, "/");
 
