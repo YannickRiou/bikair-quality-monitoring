@@ -8,7 +8,7 @@ RunningMedian co2Meas = RunningMedian(5);
 bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
-const unsigned long FIX_TIMEOUT = 300000;         // 5-minute GPS fix timeout (ms)
+const unsigned long FIX_TIMEOUT = 150000;         // 2.5-minute GPS fix timeout (ms)
 const unsigned long MEASUREMENT_DURATION = 20000; // 20-second active period
 
 uint8_t ledVal = 0;
