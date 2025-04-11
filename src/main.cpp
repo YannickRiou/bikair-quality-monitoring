@@ -501,8 +501,8 @@ void parseGPRMC(String sentence)
     // Extraire les données
     speed = sentence.substring(commaPos[6] + 1, commaPos[7]);
 
-    openLog.print("Speed: ");
-    openLog.println(speed);
+    // openLog.print("Speed: ");
+    // openLog.println(speed);
 }
 
 void parseGPVTG(String sentence)
@@ -521,8 +521,8 @@ void parseGPVTG(String sentence)
     // Extraire les données
     speed = sentence.substring(commaPos[4] + 1, commaPos[5]);
 
-    openLog.print("Speed (km/h): ");
-    openLog.println(speed);
+    // openLog.print("Speed (km/h): ");
+    // openLog.println(speed);
 }
 
 /**
