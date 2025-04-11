@@ -173,38 +173,34 @@ void setup()
 void taskSensors(void *pvParameters)
 {
     (void)pvParameters;
-    bool isDataOk = false;
+    bool storeData = false;
     uint8_t dataCounter = 0;
     uint8_t ledVal = 0;
     while (true)
     {
+
+        String sensorReadings = readSensors(storeData);
+        notifyClients(sensorReadings);
+        ws.cleanupClients();
         if (sensorkTaskOn)
         {
-
-            ledVal = !ledVal;
-            digitalWrite(GPIO_NUM_2, ledVal);
-
-            String sensorReadings = readSensors(isDataOk);
-            notifyClients(sensorReadings);
-            ws.cleanupClients();
-            if (dataCounter < 5)
+            if (dataCounter < 10)
             {
+                storeData = false;
                 dataCounter = dataCounter + 1;
+                digitalWrite(GPIO_NUM_2, LOW);
             }
             else
             {
-                isDataOk = true;
+                storeData = true;
+                digitalWrite(GPIO_NUM_2, HIGH);
             }
         }
         else
         {
-            digitalWrite(GPIO_NUM_2, HIGH);
-
-            String sensorReadings = readSensors(false);
-            notifyClients(sensorReadings);
-            ws.cleanupClients();
+            storeData = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(2500));
+        vTaskDelay(pdMS_TO_TICKS(measurePeriod));
     }
 }
 
