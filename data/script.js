@@ -6,6 +6,7 @@ window.addEventListener('load', onload);
 
 function onload(event) {
     initWebSocket();
+    sendTimeToESP32();
     syncButtonStates(); // Nouvelle fonction pour mettre à jour l’état des boutons
 }
 
@@ -48,6 +49,31 @@ function toggleCheckbox(x) {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/" + x, true);
     xhr.send();
+async function sendTimeToESP32() {
+    const now = new Date();
+
+    const timeData = {
+        year: now.getFullYear(),
+        month: now.getMonth() + 1, // JS months are 0-indexed
+        day: now.getDate(),
+        hour: now.getHours(),
+        minute: now.getMinutes(),
+        second: now.getSeconds(),
+        timezoneOffset: now.getTimezoneOffset() // en minutes
+    };
+
+    // console log the time for debug 
+    console.log("Sending time to ESP32:", timeData);
+
+    await fetch('/set-time', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(timeData)
+    });
+}
+
 function syncButtonStates() {
     console.log("Synchronizing button states...");
     fetch('/status')

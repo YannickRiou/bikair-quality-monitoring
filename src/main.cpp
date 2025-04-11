@@ -103,6 +103,43 @@ void setup()
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
               {
             Serial.println("Going to sleep...");
+    server.on("/set-time", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+                    ArduinoJson::DynamicJsonDocument doc(256);
+                    DeserializationError error = deserializeJson(doc, data, len);
+                
+                    // 2. Vérifier les erreurs de parsing
+                    if (error) {
+                        Serial.print("JSON parsing failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "text/plain", "Bad JSON");
+                        return;
+                    }
+                
+                    // 3. Lire les champs
+                    int year   = doc["year"];
+                    int month  = doc["month"];
+                    int day    = doc["day"];
+                    int hour   = doc["hour"];
+                    int minute = doc["minute"];
+                    int second = doc["second"];
+                
+                    // 4. Convertir en struct tm
+                    struct tm timeinfo;
+                    timeinfo.tm_year = year - 1900;
+                    timeinfo.tm_mon  = month - 1;
+                    timeinfo.tm_mday = day;
+                    timeinfo.tm_hour = hour;
+                    timeinfo.tm_min  = minute;
+                    timeinfo.tm_sec  = second;
+                
+                    time_t timestamp = mktime(&timeinfo);
+                    struct timeval now = { .tv_sec = timestamp };
+                    settimeofday(&now, NULL);       
+                
+                    Serial.println("Heure mise à jour avec succès");
+                    request->send(200, "text/plain", "Heure mise à jour"); });
+
     server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request)
               {
                     String json = "{";
@@ -231,6 +268,18 @@ String readSensors(bool store)
     humidityMeas.add(humidity);
     temperatureMeas.add(temperature);
     co2Meas.add(co2);
+
+    if (fixStatus == "0")
+    {
+        time_t now;
+        struct tm timeinfo;
+
+        getLocalTime(&timeinfo);
+        char timeStr[20]; // Par exemple, format YYYY-MM-DD HH:MM:SS
+        strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+        timeUTC = String(timeStr);
+    }
+
     if (store)
     {
         // Afficher les données des capteurs
@@ -252,6 +301,7 @@ String readSensors(bool store)
     }
 
     // Store for websockets
+    readings["time_utc"] = timeUTC;
     readings["co2"] = String(co2);
     readings["tvoc"] = String(tvoc);
     readings["humidity"] = String(humidityMeas.getAverage());
