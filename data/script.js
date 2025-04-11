@@ -74,9 +74,20 @@ document.getElementById("mode-btn").addEventListener("click", function () {
         btn.dataset.state = "true";
     }
 });
+
+document.getElementById("sleep-btn").addEventListener("click", function () {
+    var btn = this;
     var xhr = new XMLHttpRequest();
-    xhr.open("GET", "/" + x, true);
+    xhr.open("GET", "/sleep", true);
     xhr.send();
+    var sleepButton = document.getElementById("sleep-btn");
+    if (sleepButton.innerHTML === "💤 Sleep") {
+        sleepButton.innerHTML = "💤 Sleeping";
+        sleepButton.style.backgroundColor = "red";
+        btn.dataset.state = "false";
+    }
+});
+
 async function sendTimeToESP32() {
     const now = new Date();
 

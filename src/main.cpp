@@ -105,6 +105,9 @@ void setup()
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
               {
             Serial.println("Going to sleep...");
+            prepareForSleep(true); 
+            request->send(200, "text/plain", "OK"); });
+
     server.on("/startstopmeas", HTTP_GET, [](AsyncWebServerRequest *request)
               {
                   sensorkTaskOn = !sensorkTaskOn;                  
