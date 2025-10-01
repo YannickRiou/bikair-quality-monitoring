@@ -13,12 +13,11 @@ float lastSpeedMeasurement = 0;
 bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
+const unsigned long FIX_TIMEOUT = 150000; // 2.5-minute GPS fix timeout (ms)
+const unsigned long MEASUREMENT_DURATION = 10000;
 const unsigned long NUMBER_OF_MEASUREMENTS = 5; // Number of measurements to average
 
 uint8_t ledVal = 0;
-
-const float Toffset = 11.58;
-const float Hoffset = 17.66;
 
 const float DEFAULT_MEASURE_PERIOD = 2000;       // default measure period in ms
 uint16_t measurePeriod = DEFAULT_MEASURE_PERIOD; // default measure period
@@ -331,23 +330,20 @@ String readSensors(bool store)
 
     automaticSpeedAdjustment();
 
-    if (fixStatus == "0")
-    {
-        time_t now;
-        struct tm timeinfo;
+    time_t now;
+    struct tm timeinfo;
 
-        getLocalTime(&timeinfo);
-        char timeStr[20]; // Par exemple, format YYYY-MM-DD HH:MM:SS
-        strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-        timeUTC = String(timeStr);
-    }
+    getLocalTime(&timeinfo);
+    char timeStr[20]; // Par exemple, format YYYY-MM-DD HH:MM:SS
+    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    timeUTC = String(timeStr);
 
     // Store for websockets
     readings["time_utc"] = timeUTC;
     readings["co2"] = String(co2Meas.getMedian());
     readings["tvoc"] = String(tvocMeas.getMedian());
-    readings["humidity"] = String(humidityMeas.getMedian() + Hoffset);
-    readings["temperature"] = String(temperatureMeas.getMedian() - Toffset);
+    readings["humidity"] = String(humidityMeas.getMedian());
+    readings["temperature"] = String(temperatureMeas.getMedian());
     readings["aqi"] = String(AQI);
 
     sps30.GetValues(&val);
@@ -511,7 +507,7 @@ void parseGPGGA(String sentence)
     fixStatus = sentence.substring(commaPos[5] + 1, commaPos[6]);
     satellites = sentence.substring(commaPos[6] + 1, commaPos[7]);
     altitude = sentence.substring(commaPos[8] + 1, commaPos[9]);
-    timeUTC = convert_utc_to_readable(sentence.substring(commaPos[0] + 1, commaPos[1]));
+    // timeUTC = convert_utc_to_readable(sentence.substring(commaPos[0] + 1, commaPos[1]));
 
     // Serial.print("Latitude: ");
     // Serial.println(latitude);

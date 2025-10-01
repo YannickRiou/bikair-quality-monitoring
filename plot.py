@@ -25,9 +25,7 @@ def generate_timeseries_graphs(data):
 
     # Convertir l'heure
     if "time_utc" in data.columns:
-        data["time_utc"] = pd.to_datetime(
-            data["time_utc"], format="%H:%M:%S", errors="coerce"
-        )
+        data["time_utc"] = pd.to_datetime(data["time_utc"], errors="coerce")
 
     # Colonnes numériques possibles
     numeric_cols = ["temperature", "humidity", "tvoc", "co2", "pm1", "pm2", "speed"]
@@ -84,6 +82,7 @@ def generate_map(data):
     folium_map = folium.Map(location=map_center, zoom_start=12)
     marker_cluster = MarkerCluster().add_to(folium_map)
 
+    previous_location = None
     for _, row in data.iterrows():
         popup_content = "<br>".join(
             f"<strong>{k}:</strong> {row[k]}"
@@ -101,6 +100,13 @@ def generate_map(data):
         folium.Marker([row["latitude"], row["longitude"]], popup=popup_content).add_to(
             marker_cluster
         )
+        if previous_location is not None:
+            folium.PolyLine(
+                locations=[(row["latitude"], row["longitude"]), previous_location],
+                color="red",
+                weight=2,
+            ).add_to(folium_map)
+        previous_location = (row["latitude"], row["longitude"])
 
     map_filename = "map.html"
     folium_map.save(map_filename)
