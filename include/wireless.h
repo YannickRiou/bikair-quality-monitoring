@@ -4,27 +4,57 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <Arduino_JSON.h>
+#include <ArduinoJson.h>
 
-const char *ssid = "bikeair";
-const char *password = "madlicorne";
-IPAddress local_IP(192, 168, 1, 66);
-// We set a Gateway IP address
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
+// Configuration WiFi
+extern const char *ssid;
+extern const char *password;
+extern IPAddress local_IP;
+extern IPAddress gateway;
+extern IPAddress subnet;
 
-AsyncWebServer server(80);
-// Create a WebSocket object
-AsyncWebSocket ws("/ws");
+// Variables WebServer et WebSocket
+extern AsyncWebServer server;
+extern AsyncWebSocket ws;
 
-// Json Variable to Hold Sensor Readings
-uint8_t readStatus = 0;
-JSONVar readings;
+// Variables JSON
+extern JsonDocument readings;
 
-void notifyClients(String sensorReadings);
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len);
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+class WirelessManager
+{
+public:
+    static bool init();
+    static bool connect();
+    static void disconnect();
+    static bool isConnected();
+    static String getIP();
+    static void handleOTA();
+    static bool setupWebServer();
+    static bool uploadData(const String &data);
+    static void prepareForSleep();
+    static const char *getLastError() { return lastError; }
+    static bool isInitialized() { return initialized; }
 
-void initWebSocket();
+private:
+    static bool initialized;
+    static const char *lastError;
+
+    static bool handleFileRead(String path);
+    static void handleNotFound();
+    static void handleRoot();
+    static void handleData();
+    static void handleUpload();
+    static void reboot();
+
+    static void setError(const char *error);
+    static void clearError();
+
+    // WebSocket functions
+    static void initWebSocket();
+    static void notifyClients(String sensorReadings);
+    static void handleWebSocketMessage(void *arg, uint8_t *data, size_t len);
+    static void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+                        void *arg, uint8_t *data, size_t len);
+};
 
 #endif

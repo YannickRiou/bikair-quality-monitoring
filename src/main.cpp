@@ -1,212 +1,177 @@
-#include <main.h>
-#include <wireless.h>
+#include <Arduino.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <RunningMedian.h>
+#include <ArduinoJson.h>
+#include <driver/rtc_cntl.h>
+#include <soc/rtc_cntl_reg.h>
+#include "utils.h"
+#include "tasks.h"
+#include "config.h"
+#include "sensors.h"
+#include "network.h"
+#include "storage.h"
+#include "gps.h"
+#include "power.h"
+#include "led_manager.h"
+#include "sensor_task_manager.h"
 
-RunningMedian temperatureMeas = RunningMedian(10);
-RunningMedian humidityMeas = RunningMedian(10);
-RunningMedian co2Meas = RunningMedian(5);
-// RunningMedian pm1Meas = RunningMedian(2);
-// RunningMedian pm2Meas = RunningMedian(2);
-RunningMedian tvocMeas = RunningMedian(5);
-RunningMedian speedMeas = RunningMedian(3);
-float lastSpeedMeasurement = 0;
+// Network variables
+const char *ssid = WIFI_SSID;
+const char *password = WIFI_PASSWORD;
+IPAddress local_IP = LOCAL_IP;
+IPAddress gateway = GATEWAY;
+IPAddress subnet = SUBNET;
 
-bool sensorkTaskOn = true; // Start inactive until GPS fix is acquired
+// Web Server and WebSocket
+AsyncWebSocket ws("/ws");
+
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+
+// Task handles
+TaskHandle_t TaskGPS = NULL;
+TaskHandle_t TaskSensors = NULL;
+
+// System state
+bool sensorkTaskOn = false;
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
-const unsigned long FIX_TIMEOUT = 150000; // 2.5-minute GPS fix timeout (ms)
-const unsigned long MEASUREMENT_DURATION = 10000;
-const unsigned long NUMBER_OF_MEASUREMENTS = 5; // Number of measurements to average
 
 uint8_t ledVal = 0;
-
-const float DEFAULT_MEASURE_PERIOD = 2000;       // default measure period in ms
-uint16_t measurePeriod = DEFAULT_MEASURE_PERIOD; // default measure period
-
 HardwareSerial gpsSerial(2);
-
-SoftwareSerial openLog(16, 17);
-
-ScioSense_ENS160 ens160(0x53);
-AHT10 myAHT20(AHT10_ADDRESS_0X38, AHT20_SENSOR);
-
-String timeUTC = "";
-String latitude = "";
-String longitude = "";
-String altitude = "";
-String speed = "";
-String fixStatus = "";
-String satellites = "";
-bool sleepEnabled = false; // continuous mode by default
-
-// create constructor
-SPS30 sps30;
-#define SP30_COMMS SERIALPORT1
-
-#define TX_PIN 9
-#define RX_PIN 10
 
 void setup()
 {
+    //-------------------------------------------------------------------------
+    // System Configuration
+    //-------------------------------------------------------------------------
+    // Configure brownout detector to be less sensitive
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+    // Set CPU frequency for stability
+    setCpuFrequencyMhz(160);
+
+    // Initialize Serial and wait for stability
     Serial.begin(115200);
+    delay(100);
 
-    openLog.begin(9600); // Should be the speed specified in config.txt on the sd card divided by 2
+    Serial.println("Starting initialization sequence...");
 
-    Wire.begin(21, 22); // SDA, SCL
-
-    pinMode(GPIO_NUM_2, OUTPUT);
-    delay(25);
-
-    myAHT20.begin(21, 22);
-
-    initWebSocket();
-    initLittleFS();
-
-    Serial.println("Setting AP (Access Point)…");
-    WiFi.softAPConfig(local_IP, gateway, subnet);
-    WiFi.softAP(ssid, password);
-
-    if (!ens160.begin())
+    //-------------------------------------------------------------------------
+    // Critical Systems Initialization
+    //-------------------------------------------------------------------------
+    // Initialize Storage
+    Serial.println("Initializing storage...");
+    if (!StorageManager::init())
     {
-        Serial.println("ENS160 not found. Check connections!");
+        Serial.println("Storage initialization failed: " + String(StorageManager::getLastError()));
+        ESP.restart();
+        return;
     }
-    Serial.println("ENS160 initialized successfully.");
-    ens160.setMode(ENS160_OPMODE_STD);
+    Serial.println("Storage initialized successfully");
 
-    // set pins to use for softserial and Serial1 on ESP32
-    sps30.SetSerialPin(RX_PIN, TX_PIN);
+    // Initialize Network
+    Serial.println("Initializing network...");
+    if (!NetworkManager::init())
+    {
+        Serial.println("Network initialization failed: " + String(NetworkManager::getLastError()));
+        ESP.restart();
+        return;
+    }
+    Serial.print("Access point IP address: ");
+    Serial.println(WiFi.softAPIP());
 
-    // Begin communication channel;
-    if (!sps30.begin(SP30_COMMS))
-        Errorloop((char *)"could not initialize communication channel.", 0);
+    //-------------------------------------------------------------------------
+    // Sensor Initialization
+    //-------------------------------------------------------------------------
+    // Initialize LED pin
+    pinMode(GPIO_NUM_2, OUTPUT);
+    digitalWrite(GPIO_NUM_2, LOW);
 
-    // check for SPS30 connection
-    if (!sps30.probe())
-        Errorloop((char *)"could not probe / connect with SPS30.", 0);
+    // Initialize Sensors
+    Serial.println("Initializing sensors...");
+    if (!SensorManager::init())
+    {
+        Serial.println("Sensor initialization failed: " + String(SensorManager::getLastError()));
+        ESP.restart();
+        return;
+    }
+    Serial.println("Sensors initialized successfully");
+
+    // Initialize and start SPS30 sensor
+    if (!SPS30Manager::begin())
+    {
+        Serial.println("SPS30 initialization failed: " + String(SPS30Manager::getLastError()));
+        // Continue anyway, we'll try to recover later
+    }
     else
-        Serial.println(F("Detected SPS30."));
+    {
+        Serial.println(F("SPS30 initialized successfully"));
+    }
 
-    // reset SPS30 connection
-    if (!sps30.reset())
-        Errorloop((char *)"could not reset.", 0);
+    // Initialize GPS
+    if (!GPSManager::init())
+    {
+        Serial.println("GPS initialization failed: " + String(GPSManager::getLastError()));
+        // Continue anyway, GPS is not critical
+    }
 
-    // start measurement
-    if (sps30.start())
-        Serial.println(F("Measurement started"));
-    else
-        Errorloop((char *)"Could NOT start measurement", 0);
+    // Initialize LED manager
+    LEDManager::init();
 
-    gpsSerial.begin(9600, SERIAL_8N1, GPIO_NUM_4, GPIO_NUM_32);
-    delay(1000);
-    gpsSerial.println("$PMTK101*32"); // GPS wakeup command
-    gpsSerial.println("$PMTK313,0");  // Disable sbas
+    // Initialize and start task managers
+    SensorTaskManager::init();
+    SensorTaskManager::start();
 
-    xTaskCreate(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS);
-    xTaskCreate(taskSensors, "TaskSensors", 4096, NULL, 1, &TaskSensors);
+    // Create GPS task
+    xTaskCreatePinnedToCore(taskGPS, "TaskGPS", 2048, NULL, 1, &TaskGPS, 0);
 
-    // openLog.println("Time (UTC),lat,lon,Temperature,Humidity,TVOC,CO2,AQI,PM1,PM2");
+    // Create and start sensor task
+    sensorkTaskOn = true;
+    xTaskCreatePinnedToCore(taskSensors, "TaskSensors", 4096, NULL, 2, &TaskSensors, 1);
 
-    // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(LittleFS, "/index.html", "text/html"); });
-
-    server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-            Serial.println("Going to sleep...");
-            prepareForSleep(true); 
-            request->send(200, "text/plain", "OK"); });
-
-    server.on("/startstopmeas", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-                  sensorkTaskOn = !sensorkTaskOn;                  
-                  request->send(200, "text/plain", "OK"); });
-
-    server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-                  sleepEnabled = !sleepEnabled;
-                request->send(200, "text/plain", "OK"); });
-
-    server.on("/set-time", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-              {
-                    JsonDocument doc;
-                    DeserializationError error = deserializeJson(doc, data, len);
-                
-                    // 2. Vérifier les erreurs de parsing
-                    if (error) {
-                        Serial.print("JSON parsing failed: ");
-                        Serial.println(error.c_str());
-                        request->send(400, "text/plain", "Bad JSON");
-                        return;
-                    }
-                
-                    // 3. Lire les champs
-                    int year   = doc["year"];
-                    int month  = doc["month"];
-                    int day    = doc["day"];
-                    int hour   = doc["hour"];
-                    int minute = doc["minute"];
-                    int second = doc["second"];
-                
-                    // 4. Convertir en struct tm
-                    struct tm timeinfo;
-                    timeinfo.tm_year = year - 1900;
-                    timeinfo.tm_mon  = month - 1;
-                    timeinfo.tm_mday = day;
-                    timeinfo.tm_hour = hour;
-                    timeinfo.tm_min  = minute;
-                    timeinfo.tm_sec  = second;
-                
-                    time_t timestamp = mktime(&timeinfo);
-                    struct timeval now = { .tv_sec = timestamp };
-                    settimeofday(&now, NULL);       
-                
-                    Serial.println("Heure mise à jour avec succès");
-                    request->send(200, "text/plain", "Heure mise à jour"); });
-
-    server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-                    String json = "{";
-                    json += "\"measuring\":" + String(sensorkTaskOn ? "true" : "false") + ",";
-                    json += "\"mode\":" + String(sleepEnabled ? "true" : "false") + ",";
-                    json += "}";
-                    request->send(200, "application/json", json); });
-
-    server.serveStatic("/", LittleFS, "/");
-
-    // Start server
-    server.begin();
+    Serial.println("Web server started");
 }
 
 void taskSensors(void *pvParameters)
 {
-    (void)pvParameters;
-    bool storeData = false;
-    uint8_t dataCounter = 0;
-    uint8_t ledVal = 0;
+    static bool storeData = false;
+    static uint8_t dataCounter = 0;
+    static uint8_t ledVal = 0;
+
     while (true)
     {
-
-        String sensorReadings = readSensors(storeData);
-        notifyClients(sensorReadings);
-        ws.cleanupClients();
         if (sensorkTaskOn)
         {
-            if (dataCounter < 10)
+            String sensorReadings;
+            if (SensorManager::readAllSensors(storeData, sensorReadings))
             {
-                storeData = false;
-                dataCounter = dataCounter + 1;
-                digitalWrite(GPIO_NUM_2, LOW);
+                NetworkManager::notifyClients(sensorReadings);
+
+                if (dataCounter < 10)
+                {
+                    storeData = false;
+                    dataCounter++;
+                    digitalWrite(LED_PIN, LOW);
+                }
+                else
+                {
+                    storeData = true;
+                    digitalWrite(LED_PIN, HIGH);
+                }
             }
             else
             {
-                storeData = true;
-                digitalWrite(GPIO_NUM_2, HIGH);
+                Serial.println("Failed to read sensors: " + String(SensorManager::getLastError()));
             }
         }
         else
         {
             storeData = false;
         }
-        vTaskDelay(pdMS_TO_TICKS(measurePeriod));
+
+        NetworkManager::cleanupClients();
+        vTaskDelay(pdMS_TO_TICKS(SensorTaskManager::getPeriod()));
     }
 }
 
@@ -220,8 +185,18 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len)
     AwsFrameInfo *info = (AwsFrameInfo *)arg;
     if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT)
     {
-        String sensorReadings = readSensors(true);
-        notifyClients(sensorReadings);
+        String sensorReadings;
+        if (SensorManager::readAllSensors(true, sensorReadings))
+        {
+            notifyClients(sensorReadings);
+        }
+        else
+        {
+            String errorMsg = "{\"error\": \"Failed to read sensors: ";
+            errorMsg += SensorManager::getLastError();
+            errorMsg += "\"}";
+            notifyClients(errorMsg);
+        }
     }
 }
 
@@ -244,208 +219,33 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
     }
 }
 
-// Initialize LittleFS
-void initLittleFS()
-{
-    if (!LittleFS.begin(true))
-    {
-        Serial.println("An error has occurred while mounting LittleFS");
-    }
-    Serial.println("LittleFS mounted successfully");
-}
-
-void initWebSocket()
-{
-    ws.onEvent(onEvent);
-    server.addHandler(&ws);
-}
-
-double convert_latlon_to_decimal(String gga_coord)
-{
-    // Extraire les degrés et les minutes
-    int degrees = gga_coord.substring(0, gga_coord.length() - 7).toInt();
-    double minutes = gga_coord.substring(gga_coord.length() - 7).toDouble();
-
-    // Convertir en format décimal
-    return degrees + (minutes / 60.0);
-}
-
-String convert_utc_to_readable(String utc_time)
-{
-    // Extraire les heures, minutes et secondes
-    String hours = utc_time.substring(0, 2);
-    String minutes = utc_time.substring(2, 4);
-    String seconds = utc_time.substring(4, 6);
-
-    // Construire la chaîne formatée
-    return hours + ":" + minutes + ":" + seconds;
-}
-
-void automaticSpeedAdjustment()
-{
-    if (speed.toFloat() > 5)
-    {
-        if (speed.toFloat() > lastSpeedMeasurement)
-        {
-            measurePeriod = measurePeriod - 100;
-            if (measurePeriod < 1000)
-            {
-                measurePeriod = 1000;
-            }
-        }
-        else if (speed.toFloat() < lastSpeedMeasurement)
-        {
-            measurePeriod = measurePeriod + 100;
-            if (measurePeriod > 10000)
-            {
-                measurePeriod = 10000;
-            }
-        }
-    }
-}
-
-String readSensors(bool store)
-{
-    static bool header = true;
-    uint8_t ret, error_cnt = 0;
-    struct sps_values val;
-
-    ens160.measure();
-
-    float tvoc = ens160.getTVOC();
-    float co2 = ens160.geteCO2();
-    uint8_t AQI = ens160.getAQI();
-    float temperature = myAHT20.readTemperature();
-    float humidity = myAHT20.readHumidity();
-
-    humidityMeas.add(humidity);
-    temperatureMeas.add(temperature);
-    co2Meas.add(co2);
-    tvocMeas.add(tvoc);
-    // pm1Meas.add(float(val.MassPM1));
-    // pm2Meas.add(float(val.MassPM2));
-
-    speedMeas.add(speed.toFloat());
-    lastSpeedMeasurement = speed.toFloat();
-
-    automaticSpeedAdjustment();
-
-    time_t now;
-    struct tm timeinfo;
-
-    getLocalTime(&timeinfo);
-    char timeStr[20]; // Par exemple, format YYYY-MM-DD HH:MM:SS
-    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
-    timeUTC = String(timeStr);
-
-    // Store for websockets
-    readings["time_utc"] = timeUTC;
-    readings["co2"] = String(co2Meas.getMedian());
-    readings["tvoc"] = String(tvocMeas.getMedian());
-    readings["humidity"] = String(humidityMeas.getMedian());
-    readings["temperature"] = String(temperatureMeas.getMedian());
-    readings["aqi"] = String(AQI);
-
-    sps30.GetValues(&val);
-
-    // Store for websockets
-    readings["pm1"] = String(val.MassPM1);
-    readings["pm2"] = String(val.MassPM2);
-
-    readings["gpsfix"] = String(fixStatus);
-
-    readings["latitude"] = latitude;
-    readings["longitude"] = longitude;
-    readings["satellites"] = satellites;
-    readings["altitude"] = altitude;
-    readings["speed"] = speedMeas.getAverage();
-
-    String jsonString = JSON.stringify(readings);
-
-    if (store)
-    {
-        openLog.println(jsonString);
-    }
-    return jsonString;
-}
-
 void taskGPS(void *pvParameters)
 {
-    (void)pvParameters;
-    String gpsSentence = "";
-
     while (true)
     {
         if (gpsTaskOn)
         {
-            while (gpsSerial.available() > 0)
-            {
-                char gpsData = gpsSerial.read();
-                gpsSentence += gpsData;
-
-                if (gpsData == '\n')
-                {
-                    if (gpsSentence.startsWith("$GPGGA"))
-                    {
-                        parseGPGGA(gpsSentence);
-                    }
-                    // else if (gpsSentence.startsWith("$GPRMC"))
-                    // {
-                    //     parseGPRMC(gpsSentence);
-                    // }
-                    else if (gpsSentence.startsWith("$GPVTG"))
-                    {
-                        parseGPVTG(gpsSentence);
-                    }
-                    gpsSentence = ""; // Réinitialiser le buffer de la phrase
-                }
-            }
-            vTaskDelay(pdMS_TO_TICKS(10)); // Petit délai pour éviter de monopoliser le CPU
+            GPSManager::process();
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 }
 
-void prepareForSleep(bool deepSleep)
-{
-    sensorkTaskOn = false;
-    gpsTaskOn = false;
-
-    // Allow tasks to finish current operations
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // Power down sensors
-    sps30.stop();
-    ens160.setMode(ENS160_OPMODE_DEP_SLEEP);
-    gpsSerial.println("$PMTK161,0*28"); // GPS standby mode
-
-    // Disable peripherals
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    gpsSerial.end();
-    openLog.end();
-    Wire.end();
-    digitalWrite(GPIO_NUM_2, LOW);
-    delay(25);
-    // Configure wakeup and sleep
-    if (!deepSleep)
-    {
-        esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    }
-    esp_deep_sleep_start();
-}
-
 void loop()
 {
-    unsigned long wakeTime = millis();
-    bool fixAcquired = false;
+    static unsigned long wakeTime = millis();
+    static bool fixAcquired = false;
 
-    // Phase 1: Wait for GPS fix with timeout
+    // Mettre à jour l'état de la LED
+    LEDManager::update();
+
+    // Phase 1: Wait for GPS fix or timeout
     while ((millis() - wakeTime) < FIX_TIMEOUT)
     {
-        ledVal = !ledVal;
-        digitalWrite(GPIO_NUM_2, ledVal);
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
         delay(25);
-        if (fixStatus != "" && fixStatus != "0")
+
+        if (GPSManager::hasFix())
         {
             fixAcquired = true;
             break;
@@ -453,23 +253,16 @@ void loop()
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
-    // if (!fixAcquired)
-    // {
-    //     Serial.println("No GPS fix within timeout - returning to sleep");
-    //     prepareForSleep(false);
-    //     return;
-    // }
-
-    // Phase 2: 20-second measurement period
-    Serial.println("GPS fix acquired - starting measurements");
+    // Phase 2: Measurement period
+    Serial.println("Starting measurements");
     measurementStart = millis();
 
-    while ((millis() - measurementStart) < (measurePeriod * NUMBER_OF_MEASUREMENTS))
+    while ((millis() - measurementStart) < (SensorTaskManager::getPeriod() * NUMBER_OF_MEASUREMENTS))
     {
-        ledVal = !ledVal;
-        digitalWrite(GPIO_NUM_2, ledVal);
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
         delay(25);
-        if (fixStatus == "0")
+
+        if (!GPSManager::hasFix())
         {
             Serial.println("Lost GPS fix during measurement!");
             break;
@@ -477,204 +270,13 @@ void loop()
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 
-    // Phase 3: Prepare for sleep
-    if (sleepEnabled)
+    // Phase 3: Sleep management
+    if (PowerManager::isSleepEnabled())
     {
-        prepareForSleep(false);
+        PowerManager::prepareForSleep(false);
     }
     else
     {
         delay(TIME_TO_SLEEP * 1000);
     }
-}
-
-void parseGPGGA(String sentence)
-{
-    // Exemple de phrase $GPGGA : $GPGGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,,*xx
-    int commaIndex = 0;
-    int commaPos[15]; // GPGGA a généralement 15 champs
-
-    // Trouver les positions des virgules
-    for (int i = 0; i < 15; i++)
-    {
-        commaPos[i] = sentence.indexOf(',', commaIndex);
-        commaIndex = commaPos[i] + 1;
-    }
-
-    // Extraire les données
-    latitude = String(convert_latlon_to_decimal(sentence.substring(commaPos[1] + 1, commaPos[2])), 6);
-    longitude = String(convert_latlon_to_decimal(sentence.substring(commaPos[3] + 1, commaPos[4])), 6);
-    fixStatus = sentence.substring(commaPos[5] + 1, commaPos[6]);
-    satellites = sentence.substring(commaPos[6] + 1, commaPos[7]);
-    altitude = sentence.substring(commaPos[8] + 1, commaPos[9]);
-    // timeUTC = convert_utc_to_readable(sentence.substring(commaPos[0] + 1, commaPos[1]));
-
-    // Serial.print("Latitude: ");
-    // Serial.println(latitude);
-    // Serial.print("Longitude: ");
-    // Serial.println(longitude);
-    // Serial.print("Fix Status: ");
-    // Serial.println(fixStatus);
-    // Serial.print("Satellites: ");
-    // Serial.println(satellites);
-    // Serial.print("Altitude: ");
-    // Serial.println(altitude);
-}
-
-void parseGPRMC(String sentence)
-{
-    // Exemple de phrase $GPRMC : $GPRMC,hhmmss.ss,A,llll.ll,a,yyyyy.yy,a,x.x,x.x,ddmmyy,,,A*hh
-    int commaIndex = 0;
-    int commaPos[13]; // GPRMC a généralement 13 champs
-
-    // Trouver les positions des virgules
-    for (int i = 0; i < 13; i++)
-    {
-        commaPos[i] = sentence.indexOf(',', commaIndex);
-        commaIndex = commaPos[i] + 1;
-    }
-
-    // Extraire les données
-    speed = sentence.substring(commaPos[6] + 1, commaPos[7]);
-
-    // openLog.print("Speed: ");
-    // openLog.println(speed);
-}
-
-void parseGPVTG(String sentence)
-{
-    // Exemple de phrase $GPVTG : $GPVTG,x.x,T,x.x,M,x.x,N,x.x,K,A*hh
-    int commaIndex = 0;
-    int commaPos[10]; // GPVTG a généralement 10 champs
-
-    // Trouver les positions des virgules
-    for (int i = 0; i < 10; i++)
-    {
-        commaPos[i] = sentence.indexOf(',', commaIndex);
-        commaIndex = commaPos[i] + 1;
-    }
-
-    // Extraire les données
-    speed = sentence.substring(commaPos[4] + 1, commaPos[5]);
-
-    // openLog.print("Speed (km/h): ");
-    // openLog.println(speed);
-}
-
-/**
- * @brief : read and display device info
- */
-void GetDeviceInfo()
-{
-    char buf[32];
-    uint8_t ret;
-    SPS30_version v;
-
-    // try to read serial number
-    ret = sps30.GetSerialNumber(buf, 32);
-    if (ret == SPS30_ERR_OK)
-    {
-        Serial.print(F("Serial number : "));
-        if (strlen(buf) > 0)
-            Serial.println(buf);
-        else
-            Serial.println(F("not available"));
-    }
-    else
-        ErrtoMess((char *)"could not get serial number", ret);
-
-    // try to get product name
-    ret = sps30.GetProductName(buf, 32);
-    if (ret == SPS30_ERR_OK)
-    {
-        Serial.print(F("Product name  : "));
-
-        if (strlen(buf) > 0)
-            Serial.println(buf);
-        else
-            Serial.println(F("not available"));
-    }
-    else
-        ErrtoMess((char *)"could not get product name.", ret);
-
-    // try to get version info
-    ret = sps30.GetVersion(&v);
-    if (ret != SPS30_ERR_OK)
-    {
-        Serial.println(F("Can not read version info"));
-        return;
-    }
-
-    Serial.print(F("Firmware level: "));
-    Serial.print(v.major);
-    Serial.print(".");
-    Serial.println(v.minor);
-
-    if (SP30_COMMS != I2C_COMMS)
-    {
-        Serial.print(F("Hardware level: "));
-        Serial.println(v.HW_version);
-
-        Serial.print(F("SHDLC protocol: "));
-        Serial.print(v.SHDLC_major);
-        Serial.print(".");
-        Serial.println(v.SHDLC_minor);
-    }
-
-    Serial.print(F("Library level : "));
-    Serial.print(v.DRV_major);
-    Serial.print(".");
-    Serial.println(v.DRV_minor);
-}
-
-/**
- *  @brief : continued loop after fatal error
- *  @param mess : message to display
- *  @param r : error code
- *
- *  if r is zero, it will only display the message
- */
-void Errorloop(char *mess, uint8_t r)
-{
-    if (r)
-        ErrtoMess(mess, r);
-    else
-        Serial.println(mess);
-    Serial.println(F("Program on hold"));
-    for (;;)
-        delay(100000);
-}
-
-/**
- *  @brief : display error message
- *  @param mess : message to display
- *  @param r : error code
- *
- */
-void ErrtoMess(char *mess, uint8_t r)
-{
-    char buf[80];
-
-    Serial.print(mess);
-
-    sps30.GetErrDescription(r, buf, 80);
-    Serial.println(buf);
-}
-
-/**
- * serialTrigger prints repeated message, then waits for enter
- * to come in from the serial port.
- */
-void serialTrigger(char *mess)
-{
-    Serial.println();
-
-    while (!Serial.available())
-    {
-        Serial.println(mess);
-        delay(2000);
-    }
-
-    while (Serial.available())
-        Serial.read();
 }

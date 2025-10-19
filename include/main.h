@@ -2,45 +2,73 @@
 #define MAIN_H
 
 #include <Arduino.h>
-// enjoyneering/AHT10@^1.1.0
-#include <AHT10.h>
-
-// adafruit/ENS160 - Adafruit Fork@^3.0.1
-#include "ScioSense_ENS160.h" // ENS160 library
-
-// paulvha/sps30@^1.4.17
-#include "sps30.h"
-
 #include <Wire.h>
 #include <SoftwareSerial.h>
-#include <ArduinoJson.h>
-
+#include <vector>
 #include <LittleFS.h>
+#include "wireless.h"
+#include "sensors.h"
 
-#include <RunningMedian.h>
-
+// Constantes
 #define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP 20          /* Time ESP32 will go to sleep (in seconds) */
 
 // Tâches FreeRTOS
-TaskHandle_t TaskGPS;
-TaskHandle_t TaskSensors;
-//  Déclarations des fonctions de tâches
+extern TaskHandle_t TaskGPS;
+extern TaskHandle_t TaskSensors;
+
+// Classes de gestion
+class StorageManager
+{
+public:
+    static bool init();
+    static bool store(const String &data);
+    static bool maintainFileLimit();
+    static const char *getLastError() { return lastError; }
+    static bool isInitialized() { return initialized; }
+
+private:
+    static bool initialized;
+    static const char *lastError;
+    static void setError(const char *error);
+    static void clearError();
+};
+
+class GPSManager
+{
+public:
+    static bool init();
+    static void processTask(void *pvParameters);
+    static double getLatitude();
+    static double getLongitude();
+    static float getSpeed();
+    static String getTime();
+    static const char *getLastError() { return lastError; }
+    static bool isInitialized() { return initialized; }
+
+private:
+    static bool initialized;
+    static const char *lastError;
+
+    static double convert_latlon_to_decimal(String gga_coord);
+    static String convert_utc_to_readable(String utc_time);
+    static void parseGPGGA(String sentence);
+    static void parseGPRMC(String sentence);
+    static void parseGPVTG(String sentence);
+
+    static void setError(const char *error);
+    static void clearError();
+};
+
+class PowerManager
+{
+public:
+    static void prepareForSleep(bool deepSleep);
+    static void enterDeepSleep();
+};
+
+// Fonctions de tâche principales
 void taskGPS(void *pvParameters);
 void taskSensors(void *pvParameters);
-// function prototypes (sometimes the pre-processor does not create prototypes themself on ESPxx)
-void serialTrigger(char *mess);
-void ErrtoMess(char *mess, uint8_t r);
-void Errorloop(char *mess, uint8_t r);
-void GetDeviceInfo();
-// bool readSPS30();
-String readSensors(bool store);
-void processGPS(char data);
-void parseGPGGA(String sentence);
-void parseGPRMC(String sentence);
-void parseGPVTG(String sentence);
-void prepareForSleep(bool deepSleep);
-
-void initLittleFS();
 
 #endif
