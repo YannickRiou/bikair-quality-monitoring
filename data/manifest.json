@@ -1,0 +1,20 @@
+{
+  "name": "Bik'air — Qualité de l'air",
+  "short_name": "Bik'air",
+  "description": "Monitoring de la qualité de l'air à vélo",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0e1420",
+  "theme_color": "#1e6cb0",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "utilities"]
+}

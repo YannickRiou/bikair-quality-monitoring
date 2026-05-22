@@ -292,9 +292,13 @@ std::vector<const char *> StorageManager::listJsonFiles()
     {
         if (!file.isDirectory() && strstr(file.name(), ".json"))
         {
-            snprintf(fileNames[currentIndex], sizeof(fileNames[currentIndex]), "/%s", file.name());
-            files.push_back(fileNames[currentIndex]);
-            currentIndex++;
+            // Exclure les fichiers de configuration connus
+            if (strcmp(file.name(), "interval.json") != 0) // Exclure interval.json
+            {
+                snprintf(fileNames[currentIndex], sizeof(fileNames[currentIndex]), "/%s", file.name());
+                files.push_back(fileNames[currentIndex]);
+                currentIndex++;
+            }
         }
         file = root.openNextFile();
     }

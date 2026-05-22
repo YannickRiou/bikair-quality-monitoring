@@ -178,19 +178,19 @@ bool SensorManager::readAllSensors(bool store, String &jsonData)
     {
         readings["time_utc"] = "unknown";
     }
-    readings["co2"] = String(co2Meas.getMedian());
-    readings["tvoc"] = String(tvocMeas.getMedian());
-    readings["humidity"] = String(humidityMeas.getMedian());
-    readings["temperature"] = String(temperatureMeas.getMedian());
-    readings["aqi"] = String(AQI);
-    readings["pm1"] = String(spsValues.MassPM1);
-    readings["pm2"] = String(spsValues.MassPM2);
-    readings["gpsfix"] = GPSManager::getFixStatus();
-    readings["latitude"] = GPSManager::getLatitude();
-    readings["longitude"] = GPSManager::getLongitude();
-    readings["satellites"] = GPSManager::getSatellites();
-    readings["altitude"] = GPSManager::getAltitude();
-    readings["speed"] = String(speedMeas.getAverage());
+    readings["co2"]         = co2Meas.getMedian();
+    readings["tvoc"]        = tvocMeas.getMedian();
+    readings["humidity"]    = humidityMeas.getMedian();
+    readings["temperature"] = temperatureMeas.getMedian();
+    readings["aqi"]         = AQI;
+    readings["pm1"]         = spsValues.MassPM1;
+    readings["pm2"]         = spsValues.MassPM2;
+    readings["gpsfix"]      = GPSManager::getFixStatus();
+    readings["latitude"]    = GPSManager::getLatitude();
+    readings["longitude"]   = GPSManager::getLongitude();
+    readings["satellites"]  = GPSManager::getSatellites();
+    readings["altitude"]    = GPSManager::getAltitude();
+    readings["speed"]       = speedMeas.getAverage();
 
     serializeJson(readings, jsonData);
 
@@ -213,52 +213,26 @@ bool SensorManager::useManualInterval = false;
 
 void SensorManager::setManualInterval(uint32_t interval)
 {
-    Serial.printf("Setting manual interval: %d (current: %d, enabled: %d)\n",
-                  interval, manualMeasurementInterval, useManualInterval);
-
-    if (interval == 0)
-    {
+    if (interval == 0) {
         useManualInterval = false;
-        Serial.println("Switching to automatic interval mode");
-    }
-    else
-    {
-        if (interval < MIN_MANUAL_INTERVAL)
-        {
-            Serial.printf("Interval %d too low, setting to minimum: %d\n",
-                          interval, MIN_MANUAL_INTERVAL);
-            interval = MIN_MANUAL_INTERVAL;
-        }
-        if (interval > MAX_MANUAL_INTERVAL)
-        {
-            Serial.printf("Interval %d too high, setting to maximum: %d\n",
-                          interval, MAX_MANUAL_INTERVAL);
-            interval = MAX_MANUAL_INTERVAL;
-        }
+    } else {
+        if (interval < MIN_MANUAL_INTERVAL) interval = MIN_MANUAL_INTERVAL;
+        if (interval > MAX_MANUAL_INTERVAL) interval = MAX_MANUAL_INTERVAL;
         manualMeasurementInterval = interval;
         useManualInterval = true;
-        Serial.printf("Manual interval set to: %d seconds\n", interval);
     }
 
-    // Save settings to LittleFS
     JsonDocument doc;
-    doc["enabled"] = useManualInterval;
+    doc["enabled"]  = useManualInterval;
     doc["interval"] = manualMeasurementInterval;
-
     File file = LittleFS.open("/interval.json", "w");
-    if (file)
-    {
+    if (file) {
         serializeJson(doc, file);
         file.close();
-        Serial.println("Interval settings saved to flash");
     }
 
-    // Apply new interval immediately
-    if (useManualInterval)
-    {
-        uint16_t newPeriod = manualMeasurementInterval * 1000; // Convert seconds to milliseconds
-        SensorTaskManager::setPeriod(newPeriod);
-        Serial.printf("Measure period set to %d ms\n", newPeriod);
+    if (useManualInterval) {
+        SensorTaskManager::setPeriod(manualMeasurementInterval * 1000);
     }
 }
 

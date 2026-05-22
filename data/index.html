@@ -1,89 +1,169 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 
 <head>
     <meta charset="UTF-8">
-
-    <title>Bik'air Quality Monitoring</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" href="data:,">
-    <link rel="stylesheet" type="text/css" href="style.css">
+    <title>Bik'air — Qualité de l'air</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e6cb0">
+    <meta name="description" content="Monitoring qualité de l'air à vélo — Bik'air">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="favicon.ico">
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <header class="topnav">
         <div class="header-content">
-            <h1>🚴 Bik'air Quality Monitoring 🍃</h1>
+            <div class="brand">
+                <span class="logo">🚴</span>
+                <span>Bik'air</span>
+            </div>
+
             <div class="status-bar">
-                <div class="status-item">
-                    <span class="status-label">🕒</span>
-                    <span id="time_utc" class="status-value"></span>
+                <div id="ws-pill" class="status-pill offline" title="Connexion WebSocket">
+                    <span class="dot"></span>
+                    <span id="ws-state" class="label">Connexion…</span>
                 </div>
-                <div class="status-item">
-                    <span class="status-label">📡</span>
-                    <span id="gpsfix" class="status-indicator"></span>
+                <div id="gps-pill" class="status-pill" title="Statut GPS">
+                    <span class="dot"></span>
+                    <span class="label">GPS</span>
+                    <span id="satellites" class="muted"></span>
+                </div>
+                <div class="status-pill" title="Horloge embarquée">
+                    🕒 <span id="time_utc">—</span>
                 </div>
             </div>
+
+            <button id="theme-toggle" class="icon-btn" aria-label="Basculer thème clair/sombre" title="Basculer thème">🌗</button>
         </div>
-        <nav class="nav-tabs">
-            <a href="/" class="nav-tab active">📊 Dashboard</a>
+
+        <nav class="nav-tabs" aria-label="Navigation principale">
+            <a href="/" class="nav-tab active">📊 Tableau de bord</a>
             <a href="/files.html" class="nav-tab">📁 Fichiers</a>
         </nav>
     </header>
 
     <main class="dashboard">
-        <!-- Section Commandes -->
-        <section class="controls-section">
-            <h2>🛠️ Commandes</h2>
+
+        <div id="connection-lost" class="connection-lost-banner">
+            ⚠ Connexion temps réel perdue — tentative de reconnexion…
+        </div>
+
+        <!-- Hero : AQI + Session -->
+        <div class="hero">
+            <div id="aqi-card" class="aqi-card" data-aqi="0">
+                <div class="aqi-label">Indice de qualité d'air</div>
+                <div><span id="aqi" class="aqi-value">—</span><span class="aqi-scale"> / 5</span></div>
+                <div id="aqi-name" class="aqi-name">En attente…</div>
+                <div class="aqi-bar"><div id="aqi-bar-fill" class="aqi-bar-fill"></div></div>
+                <div class="aqi-deco">🍃</div>
+            </div>
+
+            <div class="session-card">
+                <div id="rec-badge" class="rec-badge">
+                    <span class="dot"></span>
+                    <span id="rec-text">Pas d'enregistrement</span>
+                </div>
+                <div class="session-row"><span class="session-label">⏱️ Durée de session</span><span id="sess-duration" class="session-value">00:00</span></div>
+                <div class="session-row"><span class="session-label">📏 Distance parcourue</span><span id="sess-distance" class="session-value">0 m</span></div>
+                <div class="session-row"><span class="session-label">🚴 Vitesse</span><span id="sess-speed" class="session-value">— km/h</span></div>
+                <div class="session-row"><span class="session-label">📡 Points enregistrés</span><span id="sess-points" class="session-value">0</span></div>
+            </div>
+        </div>
+
+        <!-- Contrôles -->
+        <section class="card">
+            <h2>🛠️ Commandes <span class="hint">Démarrer/arrêter l'enregistrement, régler l'intervalle</span></h2>
             <div class="controls">
-                <button class="button" id="startstopmeas-btn" data-state="false">🛑 Stop Measure</button>
-                <div class="interval-control">
-                    <label for="measure-interval">⏱️ Intervalle de mesure (s):</label>
+                <button class="button danger" id="startstopmeas-btn" data-state="false">🛑 Arrêter l'enregistrement</button>
+                <div class="field">
+                    <label for="measure-interval">⏱️ Intervalle</label>
                     <select id="measure-interval">
-                        <option value="0">Auto (basé sur la vitesse)</option>
-                        <option value="1">1s</option>
-                        <option value="2">2s</option>
-                        <option value="5">5s</option>
-                        <option value="10">10s</option>
-                        <option value="30">30s</option>
-                        <option value="60">60s</option>
+                        <option value="0">Auto (vitesse)</option>
+                        <option value="1">1 s</option>
+                        <option value="2">2 s</option>
+                        <option value="5">5 s</option>
+                        <option value="10">10 s</option>
+                        <option value="30">30 s</option>
+                        <option value="60">60 s</option>
                     </select>
                 </div>
+                <button class="button ghost" id="reset-session-btn" title="Réinitialiser stats de session">↺ Réinitialiser</button>
+                <button class="button ghost" id="sleep-btn" title="Mettre en veille">😴 Veille</button>
             </div>
         </section>
 
-        <!-- Section Capteurs / Mesures -->
-        <section class="readings-section">
-            <h2>📊 Mesures</h2>
-            <div class="grid-readings">
-                <div class="reading"><label>💨 AQI</label><span id="aqi"></span> /5</div>
-                <div class="reading"><label>🌡️ Température</label><span id="temperature"></span><span class="unit">
-                        °C</span></div>
-                <div class="reading"><label>💧 Humidité</label><span id="humidity"></span><span class="unit"> %</span>
-                </div>
-                <div class="reading"><label>🌫️ TVOC</label><span id="tvoc"></span><span class="unit"></span> ppb</span>
-                </div>
-                <div class="reading"><label>🫁 CO₂</label><span id="co2"></span><span class="unit"></span> ppm</span>
-                </div>
-                <div class="reading"><label>🌁 PM1</label><span id="pm1"></span><span class="unit"></span> μg/m³</span>
-                </div>
-                <div class="reading"><label>🌁 PM2</label><span id="pm2"></span><span class="unit"></span> μg/m³</span>
-                </div>
+        <!-- Mesures -->
+        <section class="card">
+            <h2>📊 Mesures temps réel <span class="hint">Sparklines : 10 dernières minutes</span></h2>
+            <div class="grid-readings" id="grid-readings">
+                <!-- Cartes générées dynamiquement -->
             </div>
         </section>
 
-        <!-- Section GPS -->
-        <section class="gps-section">
+        <!-- Trace GPS -->
+        <section class="card">
+            <h2>🗺️ Trace GPS <span class="hint">Couleur = AQI au point</span></h2>
+            <div class="trace-wrap">
+                <svg id="trace-svg" class="trace-svg" viewBox="0 0 400 225" preserveAspectRatio="xMidYMid meet"></svg>
+                <div id="trace-empty" class="trace-empty">En attente d'un fix GPS…</div>
+                <div id="trace-scale" class="trace-scale" hidden></div>
+            </div>
+            <div class="trace-legend">
+                <span class="swatch"><i style="background:#00b894"></i> Excellent</span>
+                <span class="swatch"><i style="background:#74d36a"></i> Bon</span>
+                <span class="swatch"><i style="background:#ffd43b"></i> Moyen</span>
+                <span class="swatch"><i style="background:#ff8a3d"></i> Médiocre</span>
+                <span class="swatch"><i style="background:#e94e3a"></i> Mauvais</span>
+            </div>
+        </section>
+
+        <!-- GPS data -->
+        <section class="card">
             <h2>🛰️ Données GPS</h2>
             <div class="grid-readings">
-                <div class="reading"><label>🧭 Latitude</label><span id="latitude"></span></div>
-                <div class="reading"><label>🧭 Longitude</label><span id="longitude"></span></div>
-                <div class="reading"><label>📡 Satellites</label><span id="satellites"></span></div>
-                <div class="reading"><label>⛰️ Altitude</label><span id="altitude"></span></div>
+                <div class="reading">
+                    <div class="reading-head"><span class="reading-label"><span class="reading-icon">🧭</span> Latitude</span></div>
+                    <div><span id="latitude" class="reading-value">—</span></div>
+                </div>
+                <div class="reading">
+                    <div class="reading-head"><span class="reading-label"><span class="reading-icon">🧭</span> Longitude</span></div>
+                    <div><span id="longitude" class="reading-value">—</span></div>
+                </div>
+                <div class="reading">
+                    <div class="reading-head"><span class="reading-label"><span class="reading-icon">⛰️</span> Altitude</span></div>
+                    <div><span id="altitude" class="reading-value">—</span><span class="reading-unit">m</span></div>
+                </div>
+                <div class="reading">
+                    <div class="reading-head"><span class="reading-label"><span class="reading-icon">📡</span> Satellites</span></div>
+                    <div><span id="satellites-val" class="reading-value">—</span></div>
+                </div>
             </div>
         </section>
 
+        <!-- Statistiques de session -->
+        <section class="card">
+            <h2>📈 Stats de session</h2>
+            <div style="overflow-x: auto;">
+                <table class="stats-table" id="stats-table">
+                    <thead>
+                        <tr>
+                            <th>Polluant</th>
+                            <th>Min</th>
+                            <th>Moy</th>
+                            <th>Max</th>
+                            <th>Actuel</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-tbody"></tbody>
+                </table>
+            </div>
+        </section>
     </main>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
     <script src="script.js"></script>
 </body>
