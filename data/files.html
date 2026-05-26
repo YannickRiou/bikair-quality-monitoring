@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bik'air — Fichiers</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e6cb0">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header class="topnav">
+        <div class="header-content">
+            <div class="brand">
+                <span class="logo">🚴</span>
+                <span>Bik'air</span>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Navigation principale">
+            <a href="/" class="nav-tab">📊 Tableau de bord</a>
+            <a href="/files.html" class="nav-tab active">📁 Fichiers</a>
+            <a href="/analyse.html" class="nav-tab">📈 Analyse</a>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <section class="card">
+            <h2>📁 Logs enregistrés <span class="hint" id="files-summary">—</span></h2>
+
+            <div class="files-toolbar">
+                <div class="field">
+                    <label for="sort-select">Trier par</label>
+                    <select id="sort-select">
+                        <option value="date-desc">Plus récents</option>
+                        <option value="date-asc">Plus anciens</option>
+                        <option value="size-desc">Plus gros</option>
+                        <option value="size-asc">Plus petits</option>
+                    </select>
+                </div>
+                <button class="button ghost" id="refresh-btn">↻ Rafraîchir</button>
+            </div>
+
+            <div id="files-container" class="files-list">
+                <div class="empty-files">Chargement…</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Preview modal -->
+    <div id="preview-overlay" class="preview-overlay" hidden>
+        <div class="preview-modal">
+            <div class="preview-head">
+                <strong id="preview-title">—</strong>
+                <button class="icon-btn" id="preview-close" aria-label="Fermer">✕</button>
+            </div>
+            <div class="preview-body">
+                <div id="preview-summary" class="preview-summary"></div>
+                <pre id="preview-content"></pre>
+            </div>
+            <div class="preview-actions">
+                <button class="button" id="export-csv-btn">⬇️ Export CSV</button>
+                <button class="button" id="export-gpx-btn">🗺️ Export GPX</button>
+                <a class="button primary" id="download-original" href="#">📥 Télécharger JSON</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+    <style>
+        .preview-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100; padding: 20px; backdrop-filter: blur(4px);
+        }
+        /* The [hidden] attribute must win over the display:flex above,
+           otherwise the modal never visually closes. */
+        .preview-overlay[hidden] { display: none; }
+        .preview-modal {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); max-width: 760px; width: 100%;
+            max-height: 90vh; display: flex; flex-direction: column;
+            box-shadow: var(--shadow-lg); overflow: hidden;
+        }
+        .preview-head {
+            padding: 14px 18px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .preview-body {
+            padding: 18px; overflow: auto; flex: 1; min-height: 0;
+        }
+        .preview-summary {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px; margin-bottom: 14px;
+        }
+        .preview-summary .item {
+            padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+        }
+        .preview-summary .item b { display: block; color: var(--text); font-size: 0.95rem; }
+        .preview-summary .item span { color: var(--text-muted); font-size: 0.78rem; }
+        pre {
+            background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm);
+            font-size: 0.8rem; color: var(--text-muted); overflow: auto;
+            max-height: 280px; font-family: ui-monospace, monospace; margin: 0;
+        }
+        .preview-actions {
+            padding: 14px 18px; border-top: 1px solid var(--border);
+            display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+        }
+    </style>
+
+    <script>
+        'use strict';
+
+        /* ---------- Toast ---------- */
+        function toast(message, type = 'info', duration = 3000) {
+            const stack = document.getElementById('toast-stack');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = message;
+            stack.appendChild(el);
+            setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 220); }, duration);
+        }
+
+        /* ---------- File ops ---------- */
+        let allFiles = [];
+
+        async function loadFiles() {
+            const c = document.getElementById('files-container');
+            c.innerHTML = '<div class="empty-files">Chargement…</div>';
+            try {
+                const r = await fetch('/api/files');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                allFiles = await r.json();
+                render();
+            } catch (e) {
+                c.innerHTML = '<div class="empty-files">Erreur lors du chargement des fichiers</div>';
+                toast('Erreur de chargement', 'error');
+            }
+        }
+
+        function render() {
+            const c = document.getElementById('files-container');
+            const summary = document.getElementById('files-summary');
+            const sort = document.getElementById('sort-select').value;
+
+            const sorted = [...allFiles];
+            sorted.sort((a, b) => {
+                switch (sort) {
+                    case 'date-asc':  return a.name.localeCompare(b.name);
+                    case 'date-desc': return b.name.localeCompare(a.name);
+                    case 'size-asc':  return a.size - b.size;
+                    case 'size-desc': return b.size - a.size;
+                }
+                return 0;
+            });
+
+            if (sorted.length === 0) {
+                c.innerHTML = '<div class="empty-files">Aucun fichier enregistré pour le moment</div>';
+                summary.textContent = '0 fichier';
+                return;
+            }
+
+            const totalSize = sorted.reduce((s, f) => s + f.size, 0);
+            summary.textContent = `${sorted.length} fichier${sorted.length > 1 ? 's' : ''} — ${fmtSize(totalSize)}`;
+
+            c.innerHTML = '';
+            for (const f of sorted) {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                const period = parsePeriod(f.name);
+                item.innerHTML = `
+                    <div class="file-icon">📄</div>
+                    <div class="file-info">
+                        <div class="file-name">${escapeHtml(f.name.replace(/^\//, ''))}</div>
+                        <div class="file-meta">
+                            ${period.start ? `<span>📅 ${period.start}</span>` : ''}
+                            ${period.end ? `<span>→ ${period.end}</span>` : ''}
+                            <span>📦 ${fmtSize(f.size)}</span>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="file-action-btn" title="Aperçu" data-action="preview">👁️</button>
+                        <a class="file-action-btn" title="Télécharger" href="/download?file=${encodeURIComponent(f.name)}">💾</a>
+                        <button class="file-action-btn danger" title="Supprimer" data-action="delete">🗑️</button>
+                    </div>
+                `;
+                item.querySelector('[data-action="preview"]').addEventListener('click', () => previewFile(f));
+                item.querySelector('[data-action="delete"]').addEventListener('click', () => deleteFile(f.name));
+                c.appendChild(item);
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({
+                '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+            })[c]);
+        }
+
+        function fmtSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' Mo';
+        }
+
+        function parsePeriod(fileName) {
+            const base = fileName.replace(/^\//, '').replace(/\.(json|TXT|txt)$/i, '');
+            const re = /(\d{8})-(\d{6})/g;
+            const matches = [...base.matchAll(re)];
+            const fmt = (d, t) =>
+                `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)} ${t.slice(0,2)}:${t.slice(2,4)}`;
+            if (matches.length >= 1) {
+                const start = fmt(matches[0][1], matches[0][2]);
+                const end = matches[1] ? fmt(matches[1][1], matches[1][2]) : null;
+                return { start, end };
+            }
+            return { start: null, end: null };
+        }
+
+        async function deleteFile(name) {
+            if (!confirm(`Supprimer ${name} ?`)) return;
+            try {
+                const r = await fetch(`/delete?file=${encodeURIComponent(name)}`, { method: 'DELETE' });
+                if (!r.ok) throw 0;
+                toast('Fichier supprimé', 'success');
+                loadFiles();
+            } catch (e) {
+                toast('Erreur de suppression', 'error');
+            }
+        }
+
+        /* ---------- Preview + export ---------- */
+        let currentPreviewData = null;
+        let currentPreviewName = null;
+
+        async function previewFile(f) {
+            currentPreviewName = f.name;
+            try {
+                const r = await fetch(`/download?file=${encodeURIComponent(f.name)}`);
+                if (!r.ok) throw 0;
+                const txt = await r.text();
+                let data = null;
+                try { data = JSON.parse(txt); } catch { /* may be malformed */ }
+                currentPreviewData = Array.isArray(data) ? data : [];
+                showPreview(f, txt, currentPreviewData);
+            } catch (e) {
+                toast('Impossible de charger l\'aperçu', 'error');
+            }
+        }
+
+        function showPreview(f, raw, data) {
+            document.getElementById('preview-title').textContent = f.name.replace(/^\//, '');
+            document.getElementById('download-original').href = `/download?file=${encodeURIComponent(f.name)}`;
+
+            const summary = document.getElementById('preview-summary');
+            summary.innerHTML = '';
+            if (data && data.length > 0) {
+                const aqis = data.map((p) => parseFloat(p.aqi)).filter((v) => isFinite(v));
+                const co2s = data.map((p) => parseFloat(p.co2)).filter((v) => isFinite(v));
+                const temps = data.map((p) => parseFloat(p.temperature)).filter((v) => isFinite(v));
+                const pms = data.map((p) => parseFloat(p.pm2)).filter((v) => isFinite(v));
+
+                const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : NaN;
+                const item = (label, value, sub = '') => `<div class="item"><b>${value}</b><span>${label}${sub ? ' · ' + sub : ''}</span></div>`;
+                summary.innerHTML = [
+                    item('Points', data.length),
+                    aqis.length ? item('AQI moyen', avg(aqis).toFixed(1)) : '',
+                    co2s.length ? item('CO₂ moyen', avg(co2s).toFixed(0), 'ppm') : '',
+                    temps.length ? item('Temp. moyenne', avg(temps).toFixed(1), '°C') : '',
+                    pms.length ? item('PM2.5 moyen', avg(pms).toFixed(1), 'µg/m³') : '',
+                ].join('');
+            } else {
+                summary.innerHTML = '<div class="item"><b>Format invalide ou vide</b><span>Aperçu brut ci-dessous</span></div>';
+            }
+
+            document.getElementById('preview-content').textContent =
+                (raw.length > 4000 ? raw.slice(0, 4000) + '\n…' : raw);
+
+            document.getElementById('preview-overlay').hidden = false;
+        }
+
+        function closePreview() {
+            document.getElementById('preview-overlay').hidden = true;
+            currentPreviewData = null;
+            currentPreviewName = null;
+        }
+
+        document.getElementById('preview-close').addEventListener('click', closePreview);
+        document.getElementById('preview-overlay').addEventListener('click', (e) => {
+            if (e.target.id === 'preview-overlay') closePreview();
+        });
+
+        /* ---------- Export ---------- */
+        function downloadBlob(content, filename, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+        }
+
+        function exportCSV() {
+            if (!currentPreviewData || currentPreviewData.length === 0) {
+                toast('Aucune donnée à exporter', 'warn');
+                return;
+            }
+            const cols = ['time_utc','latitude','longitude','altitude','speed',
+                          'temperature','humidity','co2','tvoc','aqi','pm1','pm2','satellites'];
+            const header = cols.join(',');
+            const lines = currentPreviewData.map((row) =>
+                cols.map((c) => {
+                    const v = row[c];
+                    if (v == null) return '';
+                    const s = String(v);
+                    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+                }).join(',')
+            );
+            const csv = [header, ...lines].join('\n');
+            const fname = currentPreviewName.replace(/^\//, '').replace(/\.json$/i, '') + '.csv';
+            downloadBlob(csv, fname, 'text/csv;charset=utf-8');
+            toast('CSV téléchargé', 'success');
+        }
+
+        function exportGPX() {
+            if (!currentPreviewData || currentPreviewData.length === 0) {
+                toast('Aucune donnée GPS', 'warn');
+                return;
+            }
+            const valid = currentPreviewData.filter((p) => {
+                const lat = parseFloat(p.latitude), lon = parseFloat(p.longitude);
+                return isFinite(lat) && isFinite(lon) && lat !== 0 && lon !== 0;
+            });
+            if (valid.length === 0) {
+                toast('Aucun point GPS valide', 'warn');
+                return;
+            }
+            const pts = valid.map((p) => {
+                const t = p.time_utc ? new Date(p.time_utc).toISOString() : '';
+                const ext = `<extensions>` +
+                    (p.aqi != null ? `<aqi>${p.aqi}</aqi>` : '') +
+                    (p.co2 != null ? `<co2>${p.co2}</co2>` : '') +
+                    (p.pm2 != null ? `<pm25>${p.pm2}</pm25>` : '') +
+                    (p.temperature != null ? `<temp>${p.temperature}</temp>` : '') +
+                    `</extensions>`;
+                return `      <trkpt lat="${p.latitude}" lon="${p.longitude}">` +
+                       (p.altitude != null ? `<ele>${p.altitude}</ele>` : '') +
+                       (t ? `<time>${t}</time>` : '') +
+                       ext +
+                       `</trkpt>`;
+            }).join('\n');
+
+            const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Bik'air" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Bik'air ride</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  <trk>
+    <name>${currentPreviewName.replace(/^\//, '')}</name>
+    <trkseg>
+${pts}
+    </trkseg>
+  </trk>
+</gpx>`;
+            const fname = currentPreviewName.replace(/^\//, '').replace(/\.json$/i, '') + '.gpx';
+            downloadBlob(gpx, fname, 'application/gpx+xml');
+            toast('GPX téléchargé', 'success');
+        }
+
+        document.getElementById('export-csv-btn').addEventListener('click', exportCSV);
+        document.getElementById('export-gpx-btn').addEventListener('click', exportGPX);
+        document.getElementById('sort-select').addEventListener('change', render);
+        document.getElementById('refresh-btn').addEventListener('click', loadFiles);
+
+        loadFiles();
+    </script>
+</body>
+
+</html>

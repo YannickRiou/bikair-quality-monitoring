@@ -20,17 +20,10 @@ const AQI_INFO = {
     5: { name: 'Mauvais',   color: '#e94e3a' },
 };
 
-/* Sensor definitions used to build the grid + stats + sparkline */
-const SENSORS = [
-    { id: 'temperature', icon: '🌡️', label: 'Température',  unit: '°C',    digits: 1, quality: tempQuality },
-    { id: 'humidity',    icon: '💧', label: 'Humidité',      unit: '%',     digits: 0, quality: humQuality },
-    { id: 'tvoc',        icon: '🌫️', label: 'TVOC',           unit: 'ppb',   digits: 0, quality: tvocQuality },
-    { id: 'co2',         icon: '🫁', label: 'CO₂',            unit: 'ppm',   digits: 0, quality: co2Quality },
-    { id: 'pm1',         icon: '🌁', label: 'PM 1.0',         unit: 'µg/m³', digits: 1, quality: pmQuality },
-    { id: 'pm2',         icon: '🌁', label: 'PM 2.5',         unit: 'µg/m³', digits: 1, quality: pm25Quality },
-];
-
 /* ---------- Quality scoring helpers (return 0..1 + color) ---------- */
+/* Declared BEFORE SENSORS: that array references these consts in its literals,
+   so their bindings must already exist — otherwise a TDZ ReferenceError aborts
+   the whole script at load time and the dashboard never initialises. */
 
 function makeQuality(thresholds) {
     return (v) => {
@@ -62,6 +55,16 @@ const pm25Quality = makeQuality([
     [12, '#2ecc71', 0.3], [35, '#f1c40f', 0.5], [55, '#ff8a3d', 0.8], [150, '#e74c3c', 1],
 ]);
 
+/* Sensor definitions used to build the grid + stats + sparkline */
+const SENSORS = [
+    { id: 'temperature', icon: '🌡️', label: 'Température',  unit: '°C',    digits: 1, quality: tempQuality },
+    { id: 'humidity',    icon: '💧', label: 'Humidité',      unit: '%',     digits: 0, quality: humQuality },
+    { id: 'tvoc',        icon: '🌫️', label: 'TVOC',           unit: 'ppb',   digits: 0, quality: tvocQuality },
+    { id: 'co2',         icon: '🫁', label: 'CO₂',            unit: 'ppm',   digits: 0, quality: co2Quality },
+    { id: 'pm1',         icon: '🌁', label: 'PM 1.0',         unit: 'µg/m³', digits: 1, quality: pmQuality },
+    { id: 'pm2',         icon: '🌁', label: 'PM 2.5',         unit: 'µg/m³', digits: 1, quality: pm25Quality },
+];
+
 /* ---------- State ---------- */
 
 const State = {
@@ -78,7 +81,6 @@ const State = {
     },
     recording: false,
     lastSpeed: 0,
-    theme: localStorage.getItem('theme') || null,
 };
 
 /* ---------- Utilities ---------- */
@@ -127,21 +129,6 @@ function toast(message, type = 'info', duration = 3000) {
         el.classList.add('hide');
         setTimeout(() => el.remove(), 220);
     }, duration);
-}
-
-/* ---------- Theme ---------- */
-
-function applyTheme(theme) {
-    if (theme) document.documentElement.setAttribute('data-theme', theme);
-    else document.documentElement.removeAttribute('data-theme');
-    State.theme = theme;
-}
-
-function toggleTheme() {
-    const current = State.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    const next = current === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    localStorage.setItem('theme', next);
 }
 
 /* ---------- Grid rendering ---------- */
@@ -692,12 +679,9 @@ async function goToSleep() {
 /* ---------- Init ---------- */
 
 document.addEventListener('DOMContentLoaded', async () => {
-    if (State.theme) applyTheme(State.theme);
-
     buildGrid();
     drawTrace();
 
-    $('theme-toggle').addEventListener('click', toggleTheme);
     $('startstopmeas-btn').addEventListener('click', toggleMeasure);
     $('reset-session-btn').addEventListener('click', resetSession);
     $('sleep-btn').addEventListener('click', goToSleep);
