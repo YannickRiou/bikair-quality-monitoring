@@ -48,7 +48,7 @@ bool StorageManager::init()
         return false;
     }
 
-    // Vérifier que nous ne dépassons pas la taille maximale configurée
+    // Guard against a filesystem larger than the configured maximum
     if (totalBytes > MAX_TOTAL_SPACE)
     {
         setError("Flash size exceeds maximum configured size");
@@ -190,18 +190,18 @@ bool StorageManager::store(const String &data)
 
     bool success = true;
 
-    // Vérifier si le fichier est vide ou contient seulement "["
+    // Check whether the file is empty or only contains "["
     if (fileSize <= 2)
     {
-        // Fichier vide ou nouveau, on écrit le premier élément
-        file.seek(1); // Se positionner après le "["
+        // Empty or new file: write the first element
+        file.seek(1); // Position right after the "["
         success = file.print(data);
     }
     else
     {
-        // Fichier existant, on se positionne avant le dernier "]"
+        // Existing file: position just before the trailing "]"
         file.seek(fileSize - 2);
-        success = file.print(",\n  "); // Ajouter une virgule et une indentation
+        success = file.print(",\n  "); // Add a comma and indentation
         if (success)
         {
             success = file.print(data);
@@ -215,7 +215,7 @@ bool StorageManager::store(const String &data)
         return false;
     }
 
-    // On termine toujours par un ]
+    // Always close with a ]
     success = file.println("\n]");
     file.close();
 
@@ -276,7 +276,7 @@ bool StorageManager::resetCurrentFile()
 
 std::vector<const char *> StorageManager::listJsonFiles()
 {
-    static char fileNames[MAX_FILES][32]; // Buffer statique pour stocker les noms
+    static char fileNames[MAX_FILES][32]; // Static buffer holding the names
     static int currentIndex = 0;
     currentIndex = 0;
 
@@ -290,15 +290,14 @@ std::vector<const char *> StorageManager::listJsonFiles()
     File file = root.openNextFile();
     while (file && currentIndex < MAX_FILES)
     {
-        if (!file.isDirectory() && strstr(file.name(), ".json"))
+        const char *name = file.name();
+        // Log files are named YYYYMMDD-HHMMSS.json (they start with a digit).
+        // This excludes web assets (manifest.json, …) and interval.json.
+        if (!file.isDirectory() && strstr(name, ".json") && name[0] >= '0' && name[0] <= '9')
         {
-            // Exclure les fichiers de configuration connus
-            if (strcmp(file.name(), "interval.json") != 0) // Exclure interval.json
-            {
-                snprintf(fileNames[currentIndex], sizeof(fileNames[currentIndex]), "/%s", file.name());
-                files.push_back(fileNames[currentIndex]);
-                currentIndex++;
-            }
+            snprintf(fileNames[currentIndex], sizeof(fileNames[currentIndex]), "/%s", name);
+            files.push_back(fileNames[currentIndex]);
+            currentIndex++;
         }
         file = root.openNextFile();
     }
