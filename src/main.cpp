@@ -61,8 +61,11 @@ void setup()
     }
 
     LEDManager::init();
+    // SensorTaskManager keeps the measurement period but its own task is NOT started:
+    // taskSensors below already reads every sensor. Starting both caused two
+    // independent tasks to drive the SPS30 SoftwareSerial in parallel — UART
+    // corruption + heap pressure that eventually killed the WiFi AP.
     SensorTaskManager::init();
-    SensorTaskManager::start();
 
     xTaskCreatePinnedToCore(taskGPS,     "TaskGPS",     2048, NULL, 1, &TaskGPS,     0);
     sensorkTaskOn = true;
@@ -71,10 +74,15 @@ void setup()
     Serial.println("Setup complete");
 }
 
+// Reboot if free heap drops below this many bytes — the WiFi stack needs
+// ~10 KB to allocate buffers, so falling under that risks a silent AP crash.
+static const uint32_t MIN_SAFE_HEAP = 12000;
+
 void taskSensors(void *)
 {
     static bool storeData = false;
     static uint8_t dataCounter = 0;
+    static uint8_t heapLogTick = 0;
 
     while (true) {
         if (sensorkTaskOn) {
@@ -98,6 +106,20 @@ void taskSensors(void *)
         }
 
         NetworkManager::cleanupClients();
+
+        // Heap watchdog — reboot before the WiFi stack starves
+        uint32_t freeHeap = ESP.getFreeHeap();
+        if (++heapLogTick >= 30) {
+            heapLogTick = 0;
+            Serial.printf("[HEAP] free=%u min=%u\n", freeHeap, ESP.getMinFreeHeap());
+        }
+        if (freeHeap < MIN_SAFE_HEAP) {
+            Serial.printf("[FATAL] heap exhausted (%u), restarting\n", freeHeap);
+            StorageManager::closeCurrentFile();
+            delay(200);
+            ESP.restart();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(SensorTaskManager::getPeriod()));
     }
 }
