@@ -335,10 +335,12 @@ bool StorageManager::maintainFileLimit()
 
 bool StorageManager::deleteFile(const char *filename)
 {
+    // If this is the active log file, detach it so it can be removed. The file
+    // is reopened per write, so there is no open handle to close; if recording
+    // is still on, the next sample simply creates a fresh log file.
     if (currentLogFile && strcmp(filename, currentLogFile) == 0)
     {
-        setError("Cannot delete active file");
-        return false;
+        currentLogFile = nullptr;
     }
 
     if (!LittleFS.remove(filename))
