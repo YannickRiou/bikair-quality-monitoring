@@ -2,8 +2,8 @@
 
 const char *SettingsManager::SETTINGS_FILE = "/settings.json";
 bool SettingsManager::initialized = false;
-bool SettingsManager::measuringEnabled = true; // Par défaut actif
-uint32_t SettingsManager::measureInterval = 0; // Par défaut auto
+bool SettingsManager::measuringEnabled = true; // Enabled by default
+uint32_t SettingsManager::measureInterval = 0; // Auto by default
 
 bool SettingsManager::init()
 {
@@ -14,7 +14,7 @@ bool SettingsManager::init()
 
     if (!loadSettings())
     {
-        // Si le chargement échoue, on sauve les paramètres par défaut
+        // If loading fails, save the default settings
         saveSettings();
     }
 

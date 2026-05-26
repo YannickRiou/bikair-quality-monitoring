@@ -83,34 +83,34 @@ void SensorTaskManager::taskFunction(void *parameter)
     {
         if (!acquireResources(pdMS_TO_TICKS(1000)))
         {
-            // Si on ne peut pas acquérir les ressources, on attend un peu
+            // Could not acquire resources: wait a bit
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
-        // Lecture sécurisée des capteurs
+        // Safe sensor read
         bool success = true;
         String sensorReadings;
 
         try
         {
-            // Lecture du SPS30
+            // Read the SPS30
             if (!SPS30Manager::measure(spsValues))
             {
                 Serial.println("SPS30 measurement failed: " + SPS30Manager::getLastError());
                 success = false;
             }
 
-            // Autres lectures de capteurs...
-            // Chaque opération doit avoir sa propre gestion d'erreur
+            // Other sensor reads...
+            // Each operation must handle its own errors
 
-            // Traitement des données et notification seulement si tout s'est bien passé
+            // Process and notify only if everything succeeded
             if (success)
             {
-                // Notification des clients
+                // Notify clients
                 // NetworkManager::notifyClients(sensorReadings);
 
-                // Gestion du stockage périodique
+                // Periodic storage handling
                 if (dataCounter < 10)
                 {
                     storeData = false;
@@ -127,15 +127,15 @@ void SensorTaskManager::taskFunction(void *parameter)
         }
         catch (...)
         {
-            // Capture de toute exception non gérée
+            // Catch any unhandled exception
             setError("Unexpected error in sensor task");
             success = false;
         }
 
-        // Libération des ressources
+        // Release resources
         releaseResources();
 
-        // Délai avant la prochaine lecture
+        // Delay before the next read
         vTaskDelay(pdMS_TO_TICKS(measurePeriod));
     }
 }
