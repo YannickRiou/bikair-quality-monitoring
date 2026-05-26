@@ -14,3 +14,9 @@ main-SPS30.cpp
 .vscode/extensions.json
 *.TXT
 *.html
+
+# Generated report output (plot.py)
+output/
+
+# Claude Code local config
+.claude/
