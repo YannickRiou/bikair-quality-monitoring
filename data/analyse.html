@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Bik'air — Analyse</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#1e6cb0">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="favicon.ico" sizes="any">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <header class="topnav">
+        <div class="header-content">
+            <div class="brand">
+                <span class="logo">🚴</span>
+                <span>Bik'air</span>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Navigation principale">
+            <a href="/" class="nav-tab">📊 Tableau de bord</a>
+            <a href="/files.html" class="nav-tab">📁 Fichiers</a>
+            <a href="/analyse.html" class="nav-tab active">📈 Analyse</a>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <!-- Log selection -->
+        <section class="card">
+            <h2>📂 Logs à analyser <span class="hint" id="src-summary">—</span></h2>
+            <div class="files-toolbar">
+                <button class="button ghost" id="select-all-btn">☑ Tout</button>
+                <button class="button ghost" id="select-none-btn">☐ Aucun</button>
+                <button class="button ghost" id="refresh-btn">↻ Rafraîchir</button>
+                <button class="button primary" id="analyze-btn">📈 Analyser</button>
+            </div>
+            <div id="src-list" class="ana-src-list">
+                <div class="empty-files">Chargement…</div>
+            </div>
+
+            <details class="ana-options">
+                <summary>⚙️ Options de traitement</summary>
+                <div class="ana-options-grid">
+                    <label class="field">
+                        <span>Lissage (points)</span>
+                        <input type="number" id="opt-smooth" value="5" min="1" max="60" step="1">
+                    </label>
+                    <label class="field">
+                        <span>Seuil outliers (z-score)</span>
+                        <input type="number" id="opt-zscore" value="3.5" min="1" max="10" step="0.5">
+                    </label>
+                    <label class="field">
+                        <span>Découpe session (min)</span>
+                        <input type="number" id="opt-gap" value="5" min="1" max="120" step="1">
+                    </label>
+                    <label class="field ana-check">
+                        <input type="checkbox" id="opt-nosplit">
+                        <span>Ne pas découper en sessions</span>
+                    </label>
+                </div>
+            </details>
+        </section>
+
+        <!-- Results -->
+        <div id="results"></div>
+    </main>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+    <style>
+        .ana-src-list { display: flex; flex-direction: column; gap: 6px; }
+        .ana-src-item {
+            display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+            padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+            background: var(--surface); cursor: pointer;
+        }
+        .ana-src-item:hover { border-color: var(--border-strong); }
+        .ana-src-item input { width: 18px; height: 18px; accent-color: var(--brand-500); }
+        .ana-src-item .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ana-src-item .sz { color: var(--text-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+
+        .ana-options { margin-top: 14px; }
+        .ana-options summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
+        .ana-options-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px; margin-top: 12px;
+        }
+        .ana-options .field { flex-direction: column; align-items: stretch; gap: 4px; }
+        .ana-options .field > span { font-size: 0.78rem; color: var(--text-muted); }
+        .ana-options .field input[type=number] {
+            border: none; background: transparent; color: var(--text); font: inherit;
+            font-weight: 600; padding: 4px 2px; outline: none; width: 100%;
+        }
+        .ana-options .field.ana-check { flex-direction: row; align-items: center; }
+        .ana-options .field.ana-check input { width: 18px; height: 18px; accent-color: var(--brand-500); }
+
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px; margin-bottom: 4px;
+        }
+        .stat-card {
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 12px 14px;
+        }
+        .stat-card .label {
+            font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;
+            letter-spacing: 0.04em; margin-bottom: 4px;
+        }
+        .stat-card .value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .stat-card .value .u { font-size: 0.62em; font-weight: 600; color: var(--text-soft); }
+        .stat-card .sub { font-size: 0.76rem; color: var(--text-muted); margin-top: 4px; }
+        .stat-card.warn .value { color: var(--warn); }
+        .stat-card.error .value { color: var(--error); }
+        .stat-card.ok .value { color: var(--ok); }
+
+        .aqi-badge {
+            display: inline-block; padding: 1px 8px; border-radius: 8px;
+            color: #11151c; font-weight: 700; font-size: 0.78rem;
+        }
+
+        .ana-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 14px;
+                    border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        .ana-tab {
+            padding: 7px 12px; border: none; background: transparent; cursor: pointer;
+            color: var(--text-muted); font: inherit; font-weight: 600; font-size: 0.9rem;
+            border-radius: 8px;
+        }
+        .ana-tab:hover { background: var(--bg-subtle); color: var(--text); }
+        .ana-tab.active { background: var(--brand-50); color: var(--brand-700); }
+        [data-theme="dark"] .ana-tab.active, :root:not([data-theme]) .ana-tab.active {
+            background: rgba(30,108,176,0.15); color: #82bae6;
+        }
+        .ana-panel { display: none; }
+        .ana-panel.active { display: block; }
+
+        .chart-block { margin-bottom: 18px; }
+        .chart-title { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+        .chart-svg { width: 100%; display: block; background: var(--surface-2);
+                     border: 1px solid var(--border); border-radius: var(--radius); }
+        .chart-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+
+        .ana-empty { color: var(--text-soft); padding: 30px; text-align: center; font-style: italic; }
+
+        .session-chip {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px;
+            color: inherit; font: inherit;
+            transition: border-color var(--t-fast), transform var(--t-fast);
+        }
+        .session-chip:hover { border-color: var(--brand-500); transform: translateY(-1px); }
+        .session-chip.active { border-color: var(--brand-500); box-shadow: var(--shadow-sm); }
+        .session-chip .row { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+        .session-chip .title { font-weight: 700; }
+        .session-chip .meta { color: var(--text-muted); font-size: 0.85rem; }
+        .session-chip .chips { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px;
+                               font-size: 0.82rem; color: var(--text-muted); }
+        .session-chip .chips b { color: var(--text); margin-left: 3px; }
+
+        .dl-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    </style>
+
+    <script>
+    'use strict';
+
+    /* =====================================================================
+       Bik'air — Embedded analysis (JS port of plot.py, offline SVG rendering)
+       ===================================================================== */
+
+    const $ = (id) => document.getElementById(id);
+
+    const AQI_INFO = {
+        1: { name: 'Excellent', color: '#00b894' },
+        2: { name: 'Bon',       color: '#74d36a' },
+        3: { name: 'Moyen',     color: '#ffd43b' },
+        4: { name: 'Médiocre',  color: '#ff8a3d' },
+        5: { name: 'Mauvais',   color: '#e94e3a' },
+    };
+    const WHO_PM25_24H = 15.0;
+    const WHO_PM25_ANNUAL = 5.0;
+    const CO2_GOOD = 1000;
+    const CO2_BAD = 1500;
+
+    const NUMERIC_COLS = ['temperature','humidity','tvoc','co2','pm1','pm2',
+                          'aqi','speed','latitude','longitude','altitude','satellites'];
+    const SMOOTH_COLS = ['temperature','humidity','tvoc','co2','pm1','pm2','aqi'];
+
+    /* ---------- Toast ---------- */
+    function toast(message, type = 'info', duration = 3000) {
+        const stack = $('toast-stack');
+        const el = document.createElement('div');
+        el.className = `toast ${type}`;
+        el.textContent = message;
+        stack.appendChild(el);
+        setTimeout(() => { el.classList.add('hide'); setTimeout(() => el.remove(), 220); }, duration);
+    }
+
+    /* ---------- Helpers ---------- */
+    function toNum(v) { const n = Number(v); return isFinite(n) ? n : NaN; }
+
+    // Robust log parsing: JSON array, truncated array (recording still in
+    // progress, no closing "]"), or JSONL (legacy SD-card format).
+    function parseLog(text) {
+        const head = text.replace(/^﻿/, '').trimStart();
+        if (!head) return [];
+        if (head[0] === '[') {
+            try {
+                const data = JSON.parse(head);
+                if (Array.isArray(data)) return data;
+            } catch { /* truncated -> fall back to line-by-line parsing below */ }
+        }
+        // JSONL / truncated array: parse each line independently
+        const rows = [];
+        for (let line of head.split('\n')) {
+            line = line.trim().replace(/,$/, '');
+            if (!line || line === '[' || line === ']') continue;
+            try { rows.push(JSON.parse(line)); } catch { /* incomplete line */ }
+        }
+        return rows;
+    }
+
+    function parseTime(s) {
+        if (s == null) return NaN;
+        let d = new Date(s);
+        if (!isNaN(d)) return d.getTime();
+        // Safari-safe fallback for "YYYY-MM-DD HH:MM:SS"
+        d = new Date(String(s).replace(' ', 'T'));
+        return isNaN(d) ? NaN : d.getTime();
+    }
+
+    function fmtSize(b) {
+        if (b < 1024) return b + ' B';
+        if (b < 1024*1024) return (b/1024).toFixed(1) + ' Ko';
+        return (b/(1024*1024)).toFixed(2) + ' Mo';
+    }
+    function fmtDuration(sec) {
+        if (!sec || sec <= 0) return '—';
+        const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.floor(sec%60);
+        const pad = (x) => String(x).padStart(2,'0');
+        return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    }
+    function fmtDistance(m) {
+        if (m < 1000) return `${Math.round(m)} m`;
+        return `${(m/1000).toFixed(2)} km`;
+    }
+    function fmtClock(ms) {
+        const d = new Date(ms);
+        return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        })[c]);
+    }
+    function haversine(lat1, lon1, lat2, lon2) {
+        const toRad = (x) => (x*Math.PI)/180, R = 6371000;
+        const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+        const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+        return 2*R*Math.asin(Math.sqrt(a));
+    }
+
+    /* ---------- Stats primitives ---------- */
+    function quantile(sortedAsc, q) {
+        const n = sortedAsc.length;
+        if (n === 0) return NaN;
+        if (n === 1) return sortedAsc[0];
+        const pos = (n - 1) * q;
+        const lo = Math.floor(pos), hi = Math.ceil(pos);
+        if (lo === hi) return sortedAsc[lo];
+        return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (pos - lo);
+    }
+    function median(arr) {
+        const a = arr.filter(isFinite).slice().sort((x,y)=>x-y);
+        return quantile(a, 0.5);
+    }
+    function mean(arr) {
+        let s = 0, n = 0;
+        for (const v of arr) if (isFinite(v)) { s += v; n++; }
+        return n ? s/n : NaN;
+    }
+
+    // Rolling median over a centered window (NaN-aware), min periods required.
+    function rollingMedian(values, win, minPeriods) {
+        const half = Math.floor(win/2), n = values.length, out = new Array(n).fill(NaN);
+        for (let i = 0; i < n; i++) {
+            const lo = Math.max(0, i-half), hi = Math.min(n-1, i+half);
+            const w = [];
+            for (let j = lo; j <= hi; j++) if (isFinite(values[j])) w.push(values[j]);
+            if (w.length >= minPeriods) { w.sort((a,b)=>a-b); out[i] = quantile(w, 0.5); }
+        }
+        return out;
+    }
+
+    /* =====================================================================
+       Pipeline (port of plot.py)
+       ===================================================================== */
+
+    function normalize(rows) {
+        const out = rows.map((r) => {
+            const o = Object.assign({}, r);
+            o._t = parseTime(r.time_utc);
+            for (const c of NUMERIC_COLS) o[c] = toNum(r[c]);
+            return o;
+        });
+        out.sort((a, b) => {
+            if (isNaN(a._t) && isNaN(b._t)) return 0;
+            if (isNaN(a._t)) return 1;
+            if (isNaN(b._t)) return -1;
+            return a._t - b._t;
+        });
+        return out;
+    }
+
+    function removeOutliers(rows, zThreshold) {
+        const cols = ['temperature','humidity','tvoc','co2','pm1','pm2','speed'];
+        for (const col of cols) {
+            if (!rows.some((r) => isFinite(r[col]))) continue;
+            let s = rows.map((r) => r[col]);
+            // Valeurs impossibles
+            s = s.map((v) => {
+                if (!isFinite(v)) return NaN;
+                if (['pm1','pm2','co2','tvoc'].includes(col) && v < 0) return NaN;
+                if (col === 'humidity' && (v < 0 || v > 100)) return NaN;
+                if (col === 'temperature' && (v <= -40 || v >= 80)) return NaN;
+                return v;
+            });
+            const med = rollingMedian(s, 11, 3);
+            const dev = s.map((v, i) => (isFinite(v) && isFinite(med[i])) ? Math.abs(v - med[i]) : NaN);
+            const mad = rollingMedian(dev, 11, 3);
+            for (let i = 0; i < rows.length; i++) {
+                const scale = (isFinite(mad[i]) && mad[i] !== 0) ? mad[i] * 1.4826 : NaN;
+                let keep = true;
+                if (isFinite(s[i]) && isFinite(med[i]) && isFinite(scale)) {
+                    const z = Math.abs((s[i] - med[i]) / scale);
+                    if (z >= zThreshold) keep = false;
+                }
+                rows[i][col] = keep ? s[i] : NaN;
+            }
+        }
+        return rows;
+    }
+
+    function smooth(rows, win) {
+        if (win <= 1) return rows;
+        for (const col of SMOOTH_COLS) {
+            if (!rows.some((r) => isFinite(r[col]))) continue;
+            const vals = rows.map((r) => r[col]);
+            const half = Math.floor(win/2), n = vals.length;
+            for (let i = 0; i < n; i++) {
+                const lo = Math.max(0, i-half), hi = Math.min(n-1, i+half);
+                let s = 0, c = 0;
+                for (let j = lo; j <= hi; j++) if (isFinite(vals[j])) { s += vals[j]; c++; }
+                rows[i][col + '_smooth'] = c ? s/c : NaN;
+            }
+        }
+        return rows;
+    }
+
+    function splitSessions(rows, gapMinutes, minPoints) {
+        const timed = rows.filter((r) => isFinite(r._t));
+        if (timed.length === 0) return rows.length ? [rows] : [];
+        const sessions = [];
+        let cur = [timed[0]];
+        for (let i = 1; i < timed.length; i++) {
+            const gap = (timed[i]._t - timed[i-1]._t) / 60000;
+            if (gap > gapMinutes) { sessions.push(cur); cur = []; }
+            cur.push(timed[i]);
+        }
+        if (cur.length) sessions.push(cur);
+        return sessions.filter((s) => s.length >= minPoints);
+    }
+
+    function validGps(rows) {
+        return rows.filter((r) => isFinite(r.latitude) && isFinite(r.longitude)
+                                  && r.latitude !== 0 && r.longitude !== 0);
+    }
+
+    function computeStats(rows) {
+        const s = {};
+        const times = rows.map((r) => r._t).filter(isFinite);
+        if (times.length) {
+            s.start = Math.min(...times);
+            s.end = Math.max(...times);
+            s.duration_sec = (s.end - s.start) / 1000;
+        } else { s.start = s.end = null; s.duration_sec = 0; }
+        s.points = rows.length;
+
+        // Distance (filtre sauts > 200m)
+        const gps = validGps(rows);
+        let dist = 0;
+        for (let i = 1; i < gps.length; i++) {
+            const d = haversine(gps[i-1].latitude, gps[i-1].longitude, gps[i].latitude, gps[i].longitude);
+            if (d < 200) dist += d;
+        }
+        s.distance_m = dist;
+
+        for (const col of ['temperature','humidity','tvoc','co2','pm1','pm2','aqi','speed']) {
+            const vals = rows.map((r) => r[col]).filter(isFinite);
+            if (vals.length) {
+                const sorted = vals.slice().sort((a,b)=>a-b);
+                s[col] = {
+                    min: sorted[0], max: sorted[sorted.length-1],
+                    mean: mean(vals), median: quantile(sorted, 0.5), p95: quantile(sorted, 0.95),
+                };
+            }
+        }
+
+        // Exposure dose: ∫ value × dt (unit × minutes)
+        if (times.length && s.duration_sec > 0) {
+            for (const col of ['pm2','pm1','co2','tvoc']) {
+                if (!rows.some((r) => isFinite(r[col]))) continue;
+                let dose = 0;
+                for (let i = 0; i < rows.length; i++) {
+                    let dt = 0;
+                    if (i > 0 && isFinite(rows[i]._t) && isFinite(rows[i-1]._t)) {
+                        dt = (rows[i]._t - rows[i-1]._t) / 1000;
+                        dt = Math.min(60, Math.max(0, dt));
+                    }
+                    const v = isFinite(rows[i][col]) ? rows[i][col] : 0;
+                    dose += v * dt / 60;
+                }
+                s[col] = s[col] || {};
+                s[col].dose = dose;
+            }
+        }
+
+        // Seuils OMS PM2.5
+        const pm = rows.map((r) => r.pm2).filter(isFinite);
+        if (pm.length) {
+            s.who_pm25_pct_24h = pm.filter((v) => v > WHO_PM25_24H).length / pm.length * 100;
+            s.who_pm25_pct_annual = pm.filter((v) => v > WHO_PM25_ANNUAL).length / pm.length * 100;
+        }
+
+        // AQI time distribution
+        const aqi = rows.map((r) => r.aqi).filter(isFinite)
+                        .map((v) => Math.max(1, Math.min(5, Math.round(v))));
+        if (aqi.length) {
+            const bd = {};
+            for (let lvl = 1; lvl <= 5; lvl++) bd[lvl] = aqi.filter((v) => v === lvl).length / aqi.length * 100;
+            s.aqi_time_pct = bd;
+            s.aqi_mean = mean(aqi);
+        }
+        return s;
+    }
+
+    function aggregateStats(list) {
+        const agg = {
+            sessions: list.length,
+            total_distance_m: list.reduce((a,s)=>a+(s.distance_m||0), 0),
+            total_duration_sec: list.reduce((a,s)=>a+(s.duration_sec||0), 0),
+            total_points: list.reduce((a,s)=>a+(s.points||0), 0),
+        };
+        for (const col of ['pm2','pm1','co2','tvoc','aqi']) {
+            const means = list.filter((s)=>s[col]&&isFinite(s[col].mean)).map((s)=>s[col].mean);
+            if (means.length) {
+                agg[col] = {
+                    mean_of_means: mean(means),
+                    max_seen: Math.max(...list.filter((s)=>s[col]&&isFinite(s[col].max)).map((s)=>s[col].max)),
+                    total_dose: list.reduce((a,s)=>a+((s[col]&&s[col].dose)||0), 0),
+                };
+            }
+        }
+        return agg;
+    }
+
+    // Peaks: percentile fallback (top N above the p95), no scipy.
+    function detectPeaks(rows, col, topN) {
+        const vals = rows.map((r) => r[col]).filter(isFinite);
+        if (vals.length < 10) return [];
+        const thr = quantile(vals.slice().sort((a,b)=>a-b), 0.95);
+        return rows.filter((r) => isFinite(r[col]) && r[col] > thr)
+                   .sort((a,b) => b[col] - a[col])
+                   .slice(0, topN);
+    }
+
+    /* =====================================================================
+       SVG rendering
+       ===================================================================== */
+
+    // Time series for one metric: raw (faint) + smoothed (bold)
+    function lineChart(rows, col, label, color) {
+        const pts = rows.filter((r) => isFinite(r._t) && isFinite(r[col]));
+        if (pts.length < 2) return '';
+        const scol = col + '_smooth';
+        const W = 600, H = 150, padL = 40, padR = 8, padT = 8, padB = 18;
+        const tMin = pts[0]._t, tMax = pts[pts.length-1]._t, tRange = (tMax - tMin) || 1;
+        let yMin = Infinity, yMax = -Infinity;
+        for (const r of rows) {
+            for (const k of [col, scol]) if (isFinite(r[k])) { yMin = Math.min(yMin, r[k]); yMax = Math.max(yMax, r[k]); }
+        }
+        if (!isFinite(yMin)) return '';
+        if (yMin === yMax) { yMin -= 1; yMax += 1; }
+        const yRange = yMax - yMin;
+        const X = (t) => padL + ((t - tMin) / tRange) * (W - padL - padR);
+        const Y = (v) => padT + (1 - (v - yMin) / yRange) * (H - padT - padB);
+
+        const pathOf = (key) => {
+            let d = '', pen = false;
+            for (const r of rows) {
+                if (isFinite(r._t) && isFinite(r[key])) {
+                    d += (pen ? 'L' : 'M') + X(r._t).toFixed(1) + ',' + Y(r[key]).toFixed(1) + ' ';
+                    pen = true;
+                } else pen = false;
+            }
+            return d;
+        };
+
+        const rawPath = pathOf(col);
+        const smoothPath = rows.some((r)=>isFinite(r[scol])) ? pathOf(scol) : '';
+
+        // y-axis ticks (min / mid / max)
+        const ticks = [yMin, (yMin+yMax)/2, yMax].map((v) =>
+            `<text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-soft)">${v.toFixed(1)}</text>
+             <line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${W-padR}" y2="${Y(v).toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`
+        ).join('');
+
+        // x-axis labels (start / end)
+        const xlabels = `
+            <text x="${padL}" y="${H-5}" font-size="9" fill="var(--text-soft)">${fmtClock(tMin)}</text>
+            <text x="${W-padR}" y="${H-5}" text-anchor="end" font-size="9" fill="var(--text-soft)">${fmtClock(tMax)}</text>`;
+
+        return `<div class="chart-block">
+            <div class="chart-title">${label}</div>
+            <svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+                ${ticks}
+                <path d="${rawPath}" fill="none" stroke="${color}" stroke-width="1" opacity="0.35"/>
+                ${smoothPath ? `<path d="${smoothPath}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>` : ''}
+                ${xlabels}
+            </svg>
+        </div>`;
+    }
+
+    function buildTimeseries(rows) {
+        const defs = [
+            ['aqi','AQI','#4d8dde'], ['pm2','PM2.5 (µg/m³)','#ff8a3d'], ['pm1','PM1.0 (µg/m³)','#ffd43b'],
+            ['co2','CO₂ (ppm)','#e94e3a'], ['tvoc','TVOC (ppb)','#bc6cf2'],
+            ['temperature','Température (°C)','#22c1c3'], ['humidity','Humidité (%)','#4d8dde'],
+            ['speed','Vitesse (km/h)','#4bd07a'],
+        ];
+        const blocks = defs.map(([c,l,col]) => lineChart(rows, c, l, col)).filter(Boolean);
+        return blocks.length ? blocks.join('') : '<div class="ana-empty">Pas de données temporelles</div>';
+    }
+
+    // Donut AQI
+    function buildDonut(stats) {
+        if (!stats.aqi_time_pct) return '<div class="ana-empty">Pas de données AQI</div>';
+        const segs = [];
+        for (let lvl = 1; lvl <= 5; lvl++) {
+            const pct = stats.aqi_time_pct[lvl] || 0;
+            if (pct > 0) segs.push({ pct, color: AQI_INFO[lvl].color, name: AQI_INFO[lvl].name });
+        }
+        if (!segs.length) return '<div class="ana-empty">Pas de données AQI</div>';
+        const cx = 100, cy = 100, rO = 90, rI = 50;
+        let ang = -Math.PI/2, paths = '';
+        const polar = (r, a) => [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+        for (const seg of segs) {
+            const a0 = ang, a1 = ang + (seg.pct/100)*2*Math.PI; ang = a1;
+            const large = (a1 - a0) > Math.PI ? 1 : 0;
+            const [x0o,y0o] = polar(rO, a0), [x1o,y1o] = polar(rO, a1);
+            const [x0i,y0i] = polar(rI, a0), [x1i,y1i] = polar(rI, a1);
+            paths += `<path d="M${x0o.toFixed(1)},${y0o.toFixed(1)} A${rO},${rO} 0 ${large} 1 ${x1o.toFixed(1)},${y1o.toFixed(1)}
+                      L${x1i.toFixed(1)},${y1i.toFixed(1)} A${rI},${rI} 0 ${large} 0 ${x0i.toFixed(1)},${y0i.toFixed(1)} Z"
+                      fill="${seg.color}"/>`;
+        }
+        const legend = segs.map((s) =>
+            `<span class="trace-legend"><span class="swatch"><i style="background:${s.color}"></i> ${s.name} · ${s.pct.toFixed(0)}%</span></span>`
+        ).join(' ');
+        return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:center">
+            <svg viewBox="0 0 200 200" style="width:200px;height:200px">${paths}
+                <text x="100" y="96" text-anchor="middle" font-size="13" fill="var(--text-muted)">AQI moy.</text>
+                <text x="100" y="118" text-anchor="middle" font-size="24" font-weight="700" fill="var(--text)">${(stats.aqi_mean||0).toFixed(1)}</text>
+            </svg>
+            <div class="trace-legend" style="flex-direction:column;align-items:flex-start;gap:6px">${legend}</div>
+        </div>`;
+    }
+
+    // Correlation scatter
+    function scatterChart(rows, xc, yc, xl, yl) {
+        const pts = rows.filter((r) => isFinite(r[xc]) && isFinite(r[yc]));
+        if (pts.length < 6) return '';
+        const xs = pts.map((r)=>r[xc]), ys = pts.map((r)=>r[yc]);
+        const mx = mean(xs), my = mean(ys);
+        let num = 0, dx = 0, dy = 0;
+        for (let i = 0; i < pts.length; i++) { num += (xs[i]-mx)*(ys[i]-my); dx += (xs[i]-mx)**2; dy += (ys[i]-my)**2; }
+        const r = (dx && dy) ? num/Math.sqrt(dx*dy) : 0;
+        const W = 300, H = 220, pad = 30;
+        const xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(...ys), yMax = Math.max(...ys);
+        const X = (v) => pad + ((v-xMin)/((xMax-xMin)||1))*(W-2*pad);
+        const Y = (v) => H-pad - ((v-yMin)/((yMax-yMin)||1))*(H-2*pad);
+        const dots = pts.map((p) => `<circle cx="${X(p[xc]).toFixed(1)}" cy="${Y(p[yc]).toFixed(1)}" r="2" fill="#4d8dde" opacity="0.5"/>`).join('');
+        return `<div class="chart-block">
+            <div class="chart-title">${yl} vs ${xl} (r=${r.toFixed(2)})</div>
+            <svg class="chart-svg" viewBox="0 0 ${W} ${H}">
+                <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--border)"/>
+                <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H-pad}" stroke="var(--border)"/>
+                ${dots}
+            </svg>
+        </div>`;
+    }
+
+    function buildCorrelations(rows) {
+        const pairs = [
+            ['speed','co2','Vitesse','CO₂'], ['speed','pm2','Vitesse','PM2.5'],
+            ['altitude','pm2','Altitude','PM2.5'], ['temperature','humidity','Temp.','Humidité'],
+            ['temperature','co2','Temp.','CO₂'], ['speed','aqi','Vitesse','AQI'],
+        ];
+        const blocks = pairs.map(([x,y,xl,yl]) => scatterChart(rows, x, y, xl, yl)).filter(Boolean);
+        return blocks.length ? `<div class="chart-grid2">${blocks.join('')}</div>`
+                             : '<div class="ana-empty">Pas assez de données</div>';
+    }
+
+    // GPS track coloured by AQI + peaks
+    function buildTrace(rows, peaks) {
+        const pts = validGps(rows);
+        if (pts.length < 2) return '<div class="ana-empty">Pas de coordonnées GPS valides</div>';
+        const lats = pts.map((p)=>p.latitude), lons = pts.map((p)=>p.longitude);
+        let minLat = Math.min(...lats), maxLat = Math.max(...lats);
+        let minLon = Math.min(...lons), maxLon = Math.max(...lons);
+        const minSpan = 0.0005;
+        if (maxLat-minLat < minSpan) { const c=(maxLat+minLat)/2; minLat=c-minSpan/2; maxLat=c+minSpan/2; }
+        if (maxLon-minLon < minSpan) { const c=(maxLon+minLon)/2; minLon=c-minSpan/2; maxLon=c+minSpan/2; }
+        const meanLat = (minLat+maxLat)/2, latM = 111320, lonM = 111320*Math.cos(meanLat*Math.PI/180);
+        const widthM = (maxLon-minLon)*lonM, heightM = (maxLat-minLat)*latM;
+        const VB_W = 600, VB_H = 360, pad = 16;
+        const aspectVB = (VB_W-2*pad)/(VB_H-2*pad), aspectData = widthM/heightM;
+        let usableW = VB_W-2*pad, usableH = VB_H-2*pad;
+        if (aspectData > aspectVB) usableH = usableW/aspectData; else usableW = usableH*aspectData;
+        const offX = (VB_W-usableW)/2, offY = (VB_H-usableH)/2;
+        const toXY = (p) => [
+            offX + ((p.longitude-minLon)/(maxLon-minLon))*usableW,
+            offY + (1-(p.latitude-minLat)/(maxLat-minLat))*usableH,
+        ];
+        let segs = '';
+        for (let i = 1; i < pts.length; i++) {
+            const [x1,y1] = toXY(pts[i-1]), [x2,y2] = toXY(pts[i]);
+            const aqi = Math.max(1, Math.min(5, Math.round(pts[i].aqi || 1)));
+            segs += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${AQI_INFO[aqi].color}" stroke-width="3" stroke-linecap="round"/>`;
+        }
+        const [sx,sy] = toXY(pts[0]), [ex,ey] = toXY(pts[pts.length-1]);
+        let peakMarks = '';
+        if (peaks) {
+            for (const col of Object.keys(peaks)) {
+                for (const r of peaks[col]) {
+                    if (!isFinite(r.latitude) || !isFinite(r.longitude) || r.latitude===0 || r.longitude===0) continue;
+                    const [px,py] = toXY(r);
+                    peakMarks += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" fill="none" stroke="#e94e3a" stroke-width="2"/>`;
+                }
+            }
+        }
+        return `<svg class="chart-svg" viewBox="0 0 ${VB_W} ${VB_H}" style="aspect-ratio:${VB_W}/${VB_H}">
+            <g stroke="var(--border)" stroke-width="0.5">
+                ${[1,2,3].map(i=>`<line x1="0" y1="${(VB_H/4)*i}" x2="${VB_W}" y2="${(VB_H/4)*i}"/>`).join('')}
+                ${[1,2,3,4,5,6,7].map(i=>`<line x1="${(VB_W/8)*i}" y1="0" x2="${(VB_W/8)*i}" y2="${VB_H}"/>`).join('')}
+            </g>
+            ${segs}${peakMarks}
+            <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="6" fill="#fff" stroke="#1e6cb0" stroke-width="2"/>
+            <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="6" fill="#e94e3a" stroke="#fff" stroke-width="2"/>
+        </svg>
+        <div class="trace-legend">
+            <span class="swatch"><i style="background:#00b894"></i> Excellent</span>
+            <span class="swatch"><i style="background:#74d36a"></i> Bon</span>
+            <span class="swatch"><i style="background:#ffd43b"></i> Moyen</span>
+            <span class="swatch"><i style="background:#ff8a3d"></i> Médiocre</span>
+            <span class="swatch"><i style="background:#e94e3a"></i> Mauvais</span>
+            <span class="swatch"><i style="border:2px solid #e94e3a;border-radius:50%"></i> Pic</span>
+        </div>`;
+    }
+
+    // Barres de comparaison multi-sessions
+    function buildCompare(sessions) {
+        const names = sessions.map((s) => s.name);
+        const metrics = [
+            { key: (s)=>s.stats.aqi_mean||0, title: 'AQI moyen', color: '#4d8dde' },
+            { key: (s)=>(s.stats.pm2&&s.stats.pm2.mean)||0, title: 'PM2.5 moyen', color: '#ff8a3d' },
+            { key: (s)=>(s.stats.distance_m||0)/1000, title: 'Distance (km)', color: '#4bd07a' },
+        ];
+        const blocks = metrics.map((m) => {
+            const vals = sessions.map(m.key);
+            const vMax = Math.max(...vals, 0.0001);
+            const W = 320, H = 200, pad = 24, bw = (W-2*pad)/vals.length*0.6;
+            let bars = '';
+            vals.forEach((v, i) => {
+                const x = pad + (i+0.5)*((W-2*pad)/vals.length) - bw/2;
+                const h = (v/vMax)*(H-2*pad-12);
+                bars += `<rect x="${x.toFixed(1)}" y="${(H-pad-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${m.color}" rx="2"/>
+                         <text x="${(x+bw/2).toFixed(1)}" y="${(H-pad-h-3).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${v.toFixed(1)}</text>`;
+            });
+            return `<div class="chart-block"><div class="chart-title">${m.title}</div>
+                <svg class="chart-svg" viewBox="0 0 ${W} ${H}">
+                    <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="var(--border)"/>${bars}
+                </svg></div>`;
+        });
+        return `<div class="chart-grid2">${blocks.join('')}</div>`;
+    }
+
+    /* ---------- Stats cards & table ---------- */
+    function aqiBadge(aqi) {
+        const a = Math.max(1, Math.min(5, Math.round(aqi)));
+        return `<span class="aqi-badge" style="background:${AQI_INFO[a].color}">${a} · ${AQI_INFO[a].name}</span>`;
+    }
+
+    function statCards(stats) {
+        const cards = [];
+        const card = (label, value, sub='', cls='') =>
+            `<div class="stat-card ${cls}"><div class="label">${label}</div><div class="value">${value}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+        cards.push(card('Durée', fmtDuration(stats.duration_sec)));
+        cards.push(card('Distance', fmtDistance(stats.distance_m||0)));
+        cards.push(card('Points', stats.points||0));
+        if (stats.aqi_mean != null) cards.push(card('AQI moyen', stats.aqi_mean.toFixed(1), aqiBadge(stats.aqi_mean)));
+        if (stats.pm2 && stats.pm2.mean != null) {
+            const m = stats.pm2.mean;
+            const cls = m > WHO_PM25_24H ? 'error' : (m > WHO_PM25_ANNUAL ? 'warn' : 'ok');
+            cards.push(card('PM2.5 moyen', `${m.toFixed(1)}<span class="u"> µg/m³</span>`, `max ${stats.pm2.max.toFixed(1)}`, cls));
+        }
+        if (stats.pm2 && stats.pm2.dose != null)
+            cards.push(card('Dose PM2.5', `${stats.pm2.dose.toFixed(0)}<span class="u"> µg·min/m³</span>`));
+        if (stats.co2 && stats.co2.mean != null) {
+            const m = stats.co2.mean;
+            const cls = m > CO2_BAD ? 'error' : (m > CO2_GOOD ? 'warn' : 'ok');
+            cards.push(card('CO₂ moyen', `${m.toFixed(0)}<span class="u"> ppm</span>`, `max ${stats.co2.max.toFixed(0)}`, cls));
+        }
+        if (stats.speed && stats.speed.mean != null)
+            cards.push(card('Vitesse moy.', `${stats.speed.mean.toFixed(1)}<span class="u"> km/h</span>`, `max ${stats.speed.max.toFixed(1)}`));
+        if (stats.who_pm25_pct_24h != null) {
+            const p = stats.who_pm25_pct_24h;
+            const cls = p > 50 ? 'error' : (p > 10 ? 'warn' : 'ok');
+            cards.push(card('% temps > OMS 24h', `${p.toFixed(0)}%`, `seuil ${WHO_PM25_24H} µg/m³`, cls));
+        }
+        return `<div class="stats-grid">${cards.join('')}</div>`;
+    }
+
+    function detailTable(stats) {
+        const rows = [
+            ['temperature','Température (°C)'], ['humidity','Humidité (%)'], ['co2','CO₂ (ppm)'],
+            ['tvoc','TVOC (ppb)'], ['pm1','PM1.0 (µg/m³)'], ['pm2','PM2.5 (µg/m³)'],
+            ['speed','Vitesse (km/h)'], ['aqi','AQI'],
+        ];
+        const trs = rows.filter(([c]) => stats[c]).map(([c,l]) => {
+            const s = stats[c];
+            return `<tr><td>${l}</td><td>${s.min.toFixed(2)}</td><td>${s.mean.toFixed(2)}</td><td>${s.median.toFixed(2)}</td><td>${s.p95.toFixed(2)}</td><td>${s.max.toFixed(2)}</td></tr>`;
+        });
+        if (!trs.length) return '<div class="ana-empty">—</div>';
+        return `<table class="stats-table"><thead><tr><th>Polluant</th><th>Min</th><th>Moy</th><th>Médiane</th><th>P95</th><th>Max</th></tr></thead><tbody>${trs.join('')}</tbody></table>`;
+    }
+
+    /* ---------- Exports ---------- */
+    function downloadBlob(content, filename, type) {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    }
+    function exportCSV(rows, name) {
+        const cols = ['time_utc','latitude','longitude','altitude','speed','temperature','humidity','co2','tvoc','aqi','pm1','pm2','satellites'];
+        const lines = rows.map((r) => cols.map((c) => {
+            const v = r[c]; if (v == null || (typeof v === 'number' && isNaN(v))) return '';
+            const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+        }).join(','));
+        downloadBlob([cols.join(','), ...lines].join('\n'), `${name}.csv`, 'text/csv;charset=utf-8');
+        toast('CSV téléchargé', 'success');
+    }
+    function exportGPX(rows, name) {
+        const gps = validGps(rows);
+        if (!gps.length) { toast('Aucun point GPS', 'warn'); return; }
+        const pts = gps.map((p) => {
+            const t = isFinite(p._t) ? new Date(p._t).toISOString() : '';
+            const ext = '<extensions>' +
+                (isFinite(p.aqi)?`<aqi>${p.aqi}</aqi>`:'') + (isFinite(p.co2)?`<co2>${p.co2}</co2>`:'') +
+                (isFinite(p.pm2)?`<pm25>${p.pm2}</pm25>`:'') + (isFinite(p.temperature)?`<temp>${p.temperature}</temp>`:'') +
+                '</extensions>';
+            return `      <trkpt lat="${p.latitude}" lon="${p.longitude}">` +
+                   (isFinite(p.altitude)?`<ele>${p.altitude}</ele>`:'') + (t?`<time>${t}</time>`:'') + ext + '</trkpt>';
+        }).join('\n');
+        const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Bik'air" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${escapeHtml(name)}</name><time>${new Date().toISOString()}</time></metadata>
+  <trk><name>${escapeHtml(name)}</name><trkseg>
+${pts}
+    </trkseg></trk>
+</gpx>`;
+        downloadBlob(gpx, `${name}.gpx`, 'application/gpx+xml');
+        toast('GPX téléchargé', 'success');
+    }
+
+    /* =====================================================================
+       Orchestration
+       ===================================================================== */
+    let allFiles = [];
+    let analyzed = [];   // [{ name, rows, stats, peaks }]
+
+    async function loadFileList() {
+        const c = $('src-list');
+        c.innerHTML = '<div class="empty-files">Chargement…</div>';
+        try {
+            const r = await fetch('/api/files');
+            if (!r.ok) throw 0;
+            allFiles = await r.json();
+            renderFileList();
+        } catch (e) {
+            c.innerHTML = '<div class="empty-files">Erreur de chargement</div>';
+            toast('Erreur de chargement', 'error');
+        }
+    }
+
+    function renderFileList() {
+        const c = $('src-list');
+        if (!allFiles.length) {
+            c.innerHTML = '<div class="empty-files">Aucun log enregistré</div>';
+            $('src-summary').textContent = '0 fichier';
+            return;
+        }
+        const sorted = [...allFiles].sort((a,b) => b.name.localeCompare(a.name));
+        $('src-summary').textContent = `${sorted.length} fichier${sorted.length>1?'s':''}`;
+        c.innerHTML = '';
+        for (const f of sorted) {
+            const el = document.createElement('label');
+            el.className = 'ana-src-item';
+            el.innerHTML = `<input type="checkbox" value="${escapeHtml(f.name)}">
+                <span class="nm">${escapeHtml(f.name.replace(/^\//,''))}</span>
+                <span class="sz">${fmtSize(f.size)}</span>`;
+            c.appendChild(el);
+        }
+    }
+
+    function selectedFiles() {
+        return [...document.querySelectorAll('#src-list input:checked')].map((i) => i.value);
+    }
+
+    async function analyze() {
+        const files = selectedFiles();
+        if (!files.length) { toast('Sélectionne au moins un log', 'warn'); return; }
+
+        const smoothWin = parseInt($('opt-smooth').value, 10) || 1;
+        const zscore = parseFloat($('opt-zscore').value) || 3.5;
+        const gap = parseInt($('opt-gap').value, 10) || 5;
+        const noSplit = $('opt-nosplit').checked;
+
+        $('results').innerHTML = '<section class="card"><div class="ana-empty">Traitement en cours…</div></section>';
+        analyzed = [];
+
+        try {
+            for (const file of files) {
+                const r = await fetch(`/download?file=${encodeURIComponent(file)}`);
+                if (!r.ok) continue;
+                const data = parseLog(await r.text());
+                if (!data.length) continue;
+
+                const base = file.replace(/^\//,'').replace(/\.(json|txt)$/i,'');
+                let rows = normalize(data);
+                const sessions = noSplit ? [rows] : splitSessions(rows, gap, 5);
+                const subs = (sessions.length <= 1) ? [[base, rows]]
+                    : sessions.map((s, i) => [`${base}_session${i+1}`, s]);
+
+                for (const [name, sub] of subs) {
+                    let rr = sub.map((x) => Object.assign({}, x));   // defensive copy
+                    rr = removeOutliers(rr, zscore);
+                    rr = smooth(rr, smoothWin);
+                    const stats = computeStats(rr);
+                    const peaks = {};
+                    for (const col of ['pm2','co2','tvoc']) peaks[col] = detectPeaks(rr, col, 3);
+                    analyzed.push({ name, rows: rr, stats, peaks });
+                }
+            }
+        } catch (e) {
+            $('results').innerHTML = '<section class="card"><div class="ana-empty">Erreur durant le traitement</div></section>';
+            toast('Erreur durant le traitement', 'error');
+            return;
+        }
+
+        if (!analyzed.length) {
+            $('results').innerHTML = '<section class="card"><div class="ana-empty">Aucune donnée exploitable</div></section>';
+            return;
+        }
+        renderResults();
+    }
+
+    function renderResults() {
+        const root = $('results');
+        root.innerHTML = '';
+
+        if (analyzed.length > 1) {
+            const agg = aggregateStats(analyzed.map((a) => a.stats));
+            const cards = [
+                `<div class="stat-card"><div class="label">Sorties</div><div class="value">${agg.sessions}</div></div>`,
+                `<div class="stat-card"><div class="label">Distance totale</div><div class="value">${fmtDistance(agg.total_distance_m)}</div></div>`,
+                `<div class="stat-card"><div class="label">Durée totale</div><div class="value">${fmtDuration(agg.total_duration_sec)}</div></div>`,
+                `<div class="stat-card"><div class="label">Points totaux</div><div class="value">${agg.total_points}</div></div>`,
+            ];
+            if (agg.pm2) {
+                const m = agg.pm2.mean_of_means;
+                const cls = m > WHO_PM25_24H ? 'error' : (m > WHO_PM25_ANNUAL ? 'warn' : 'ok');
+                cards.push(`<div class="stat-card ${cls}"><div class="label">PM2.5 moyen global</div><div class="value">${m.toFixed(1)}<span class="u"> µg/m³</span></div><div class="sub">max ${agg.pm2.max_seen.toFixed(1)}</div></div>`);
+            }
+            if (agg.aqi) {
+                const m = agg.aqi.mean_of_means;
+                cards.push(`<div class="stat-card"><div class="label">AQI moyen global</div><div class="value">${m.toFixed(1)}</div><div class="sub">${aqiBadge(m)}</div></div>`);
+            }
+            const sec = document.createElement('section');
+            sec.className = 'card';
+            sec.innerHTML = `<h2>🚴 Rapport agrégé <span class="hint">${agg.sessions} sorties</span></h2>
+                <div class="stats-grid">${cards.join('')}</div>
+                <div class="chart-block" style="margin-top:14px"><div class="chart-title">Comparaison entre sorties</div></div>`;
+            sec.querySelector('.chart-block').insertAdjacentHTML('beforeend', buildCompare(analyzed));
+            root.appendChild(sec);
+
+            // Session selector
+            const list = document.createElement('section');
+            list.className = 'card';
+            list.innerHTML = `<h2>📂 Détail par sortie</h2><div id="session-chips"></div><div id="session-detail"></div>`;
+            root.appendChild(list);
+            const chipBox = $('session-chips');
+            analyzed.forEach((a, i) => {
+                const st = a.stats;
+                const startStr = st.start ? new Date(st.start).toLocaleString([], { dateStyle:'short', timeStyle:'short' }) : '—';
+                const chips = [`<span>⏱ <b>${fmtDuration(st.duration_sec)}</b></span>`,
+                               `<span>📏 <b>${fmtDistance(st.distance_m||0)}</b></span>`,
+                               `<span>📡 <b>${st.points} pts</b></span>`];
+                if (st.aqi_mean != null) chips.push(`<span>🍃 AQI <b>${st.aqi_mean.toFixed(1)}</b></span>`);
+                if (st.pm2 && st.pm2.mean != null) chips.push(`<span>🌁 PM2.5 <b>${st.pm2.mean.toFixed(1)}</b></span>`);
+                const btn = document.createElement('button');
+                btn.className = 'session-chip';
+                btn.innerHTML = `<div class="row"><span class="title">🚴 ${escapeHtml(a.name)}</span><span class="meta">${startStr}</span></div>
+                                 <div class="chips">${chips.join('')}</div>`;
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.session-chip').forEach((x) => x.classList.remove('active'));
+                    btn.classList.add('active');
+                    $('session-detail').innerHTML = '';
+                    $('session-detail').appendChild(detailView(a));
+                });
+                chipBox.appendChild(btn);
+            });
+        } else {
+            root.appendChild(detailView(analyzed[0]));
+        }
+    }
+
+    // Detailed view of a single session (cards + tabs)
+    function detailView(a) {
+        const wrap = document.createElement('section');
+        wrap.className = 'card';
+        const st = a.stats;
+        const period = (st.start ? new Date(st.start).toLocaleString([], { dateStyle:'short', timeStyle:'short' }) : '—')
+                     + (st.end ? ' → ' + new Date(st.end).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '');
+        wrap.innerHTML = `
+            <h2>🚴 ${escapeHtml(a.name)} <span class="hint">${period}</span></h2>
+            ${statCards(st)}
+            <div class="ana-tabs">
+                <button class="ana-tab active" data-t="map">🗺️ Carte</button>
+                <button class="ana-tab" data-t="ts">📈 Séries</button>
+                <button class="ana-tab" data-t="aqi">🍃 AQI</button>
+                <button class="ana-tab" data-t="corr">🔗 Corrélations</button>
+                <button class="ana-tab" data-t="stats">📊 Stats</button>
+            </div>
+            <div class="ana-panel active" data-p="map">${buildTrace(a.rows, a.peaks)}</div>
+            <div class="ana-panel" data-p="ts">${buildTimeseries(a.rows)}</div>
+            <div class="ana-panel" data-p="aqi">${buildDonut(st)}</div>
+            <div class="ana-panel" data-p="corr">${buildCorrelations(a.rows)}</div>
+            <div class="ana-panel" data-p="stats">${detailTable(st)}</div>
+            <div class="dl-bar">
+                <button class="button" data-dl="csv">⬇️ Export CSV</button>
+                <button class="button" data-dl="gpx">🗺️ Export GPX</button>
+            </div>`;
+        wrap.querySelectorAll('.ana-tab').forEach((t) => {
+            t.addEventListener('click', () => {
+                wrap.querySelectorAll('.ana-tab').forEach((x) => x.classList.toggle('active', x === t));
+                wrap.querySelectorAll('.ana-panel').forEach((p) => p.classList.toggle('active', p.dataset.p === t.dataset.t));
+            });
+        });
+        wrap.querySelector('[data-dl="csv"]').addEventListener('click', () => exportCSV(a.rows, a.name));
+        wrap.querySelector('[data-dl="gpx"]').addEventListener('click', () => exportGPX(a.rows, a.name));
+        return wrap;
+    }
+
+    /* ---------- Init ---------- */
+    document.addEventListener('DOMContentLoaded', () => {
+        $('refresh-btn').addEventListener('click', loadFileList);
+        $('analyze-btn').addEventListener('click', analyze);
+        $('select-all-btn').addEventListener('click', () =>
+            document.querySelectorAll('#src-list input').forEach((i) => i.checked = true));
+        $('select-none-btn').addEventListener('click', () =>
+            document.querySelectorAll('#src-list input').forEach((i) => i.checked = false));
+        loadFileList();
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+    </script>
+</body>
+
+</html>

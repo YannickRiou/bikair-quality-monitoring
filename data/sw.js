@@ -2,11 +2,12 @@
  * Caches the shell so the dashboard works as installable PWA.
  * Live data still goes via WebSocket (network only).
  */
-const CACHE = 'bikair-v1';
+const CACHE = 'bikair-v5';
 const SHELL = [
     '/',
     '/index.html',
     '/files.html',
+    '/analyse.html',
     '/style.css',
     '/script.js',
     '/manifest.json',
