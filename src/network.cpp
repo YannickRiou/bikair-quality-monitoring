@@ -111,8 +111,12 @@ void NetworkManager::setupEndpoints()
 
     server.on("/sleep", HTTP_GET, [](AsyncWebServerRequest *req)
               {
-        PowerManager::prepareForSleep(true);
-        req->send(200, "text/plain", "OK"); });
+        // Answer first, then defer the actual sleep to taskSensors: deep sleep
+        // never returns and shuts WiFi down, so calling it here would drop the
+        // response and make the client report an error.
+        extern volatile bool sleepRequested;
+        req->send(200, "text/plain", "OK");
+        sleepRequested = true; });
 
     server.on("/startstopmeas", HTTP_GET, [](AsyncWebServerRequest *req)
               {

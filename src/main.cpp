@@ -22,6 +22,11 @@ bool sensorkTaskOn = false;
 bool gpsTaskOn = true;
 unsigned long measurementStart = 0;
 
+// Set by the /sleep endpoint. Sleep is deferred to taskSensors so the HTTP
+// response is flushed before WiFi is shut down (otherwise the client request
+// fails and the dashboard reports a sleep error).
+volatile bool sleepRequested = false;
+
 HardwareSerial gpsSerial(2);
 
 static void initOrRestart(const char *name, bool ok, const char *err)
@@ -85,6 +90,14 @@ void taskSensors(void *)
     static uint8_t heapLogTick = 0;
 
     while (true) {
+        // Deferred sleep: the /sleep endpoint has already answered the client,
+        // so we can now bring WiFi down and enter deep sleep safely.
+        if (sleepRequested) {
+            sleepRequested = false;
+            vTaskDelay(pdMS_TO_TICKS(300)); // let the HTTP response flush
+            PowerManager::prepareForSleep(true);
+        }
+
         if (sensorkTaskOn) {
             String readings;
             if (SensorManager::readAllSensors(storeData, readings)) {

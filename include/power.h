@@ -13,7 +13,6 @@ public:
 
 private:
     static bool sleepEnabled;
-    static void configureWakeupSources();
     static void shutdownPeripherals();
 };
 

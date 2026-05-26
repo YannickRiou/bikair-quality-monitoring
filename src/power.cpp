@@ -37,16 +37,16 @@ void PowerManager::prepareForSleep(bool deepSleep)
     // Shutdown peripherals
     shutdownPeripherals();
 
-    // Configure wakeup sources
-    configureWakeupSources();
-
-    // Enter sleep mode
     if (deepSleep)
     {
+        // Manual standby ("Veille"): no wake source, so the device stays asleep
+        // at minimum power until the user presses reset.
         esp_deep_sleep_start();
     }
     else
     {
+        // Light sleep: arm a timer so the measurement cycle resumes on its own.
+        esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
         esp_light_sleep_start();
     }
 }
@@ -54,14 +54,6 @@ void PowerManager::prepareForSleep(bool deepSleep)
 void PowerManager::enableSleepMode(bool enable)
 {
     sleepEnabled = enable;
-}
-
-void PowerManager::configureWakeupSources()
-{
-    if (!sleepEnabled)
-    {
-        esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-    }
 }
 
 void PowerManager::shutdownPeripherals()
