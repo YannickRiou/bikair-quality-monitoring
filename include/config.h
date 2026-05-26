@@ -69,6 +69,6 @@ static const uint8_t SPEED_SAMPLES = 3;
 static const size_t MAX_FILES = 3;            // Maximum number of files
 static const size_t MAX_FILE_SIZE = 100000;   // Maximum file size (bytes)
 static const size_t MIN_FREE_SPACE = 10000;   // Minimum free space (bytes)
-static const size_t MAX_TOTAL_SPACE = 300000; // Maximum total space to use (bytes)
+static const size_t MAX_TOTAL_SPACE = 1966080; // Maximum total space to use (bytes) — partition spiffs (0x1E0000)
 
 #endif // CONFIG_H
